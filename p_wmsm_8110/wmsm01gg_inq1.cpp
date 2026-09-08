@@ -73,6 +73,50 @@ int f_wmsm01gg_inq1(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		tmmsm01.MergeFrom(bcls_ret->Tables[0].Rows[0]);
 
 		bcls_ret->Tables.Add();
+// DM8 适配 CHANGE-95:查询。VMMSM01。SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " select T03.CAST_LOT_NO,\
+			// V1.ST_NO,\
+			// (SELECT MAT_NO FROM VMMSM01 WHERE LSLAB_NO = T03.LSLAB_NO AND PONO = V1.PONO) MAT_NO,\
+			// T03.*,\
+			// '0'                                                                           ifkepei,\
+			// T33.LEN_MIN,\
+			// T33.LEN_MAX,\
+			// T33.MINWIDTH,\
+			// T33.MAXWIDTH,\
+			// T33.THICK_MIN,\
+			// T33.THICK_MAX\
+			// from VPSSM11 V1\
+			// left join(select LSLAB_NO,\
+				// listagg(SLAB_NO, '/'),\
+				// max(PONO)                                                                        pono,\
+				// max(SLAB_PROD_FLAG)                                                              SLAB_PROD_FLAG,\
+				// decode(max(LSLAB_NO_LENGTH), 0, max(SLAB_LEN), max(LSLAB_NO_LENGTH))             SLAB_LEN,\
+				// decode(max(LSLAB_NO_LENGTH_MAX), 0, max(SLAB_MAX_LEN),\
+					// max(LSLAB_NO_LENGTH_MAX))                                                 SLAB_MAX_LEN,\
+				// decode(max(LSLAB_NO_LENGTH_MIN), 0, max(SLAB_MIN_LEN),\
+					// max(LSLAB_NO_LENGTH_MIN))                                                 SLAB_MIN_LEN,\
+				// max(SLAB_WIDTH)                                                                  SLAB_WIDTH,\
+				// max(SLAB_THICK)                                                                  SLAB_THICK,\
+				// max(SLAB_DEST)                                                                   SLAB_DEST,\
+				// max(apn)                                                                         apn,\
+				// max(ORDER_NO)                                                                    ORDER_NO,\
+				// max(SG_SIGN)                                                                     SG_SIGN,\
+				// max(BILLET_TYPE)                                                                 BILLET_TYPE,\
+				// max(MATIRAL_CODE)                                                                MATIRAL_CODE,\
+				// max(CAST_LOT_NO)                                                                 CAST_LOT_NO,\
+				 // max(FACTORY_NEXT)                                                                FACTORY_NEXT\
+				// from tpssm03\
+		// where PONO = '" + bcls_ret->Tables[0].Rows[0]["PONO"].ToString() + "'\
+			// group by LSLAB_NO) T03 ON V1.PONO = T03.PONO\
+			// left join Vpssm10 T10 ON V1.PONO = T10.PONO\
+			// LEFT JOIN TMMSM33BPGG T33 ON DECODE(T10.SLAB_DEST, '41', '6', T10.C_DIV) = T33.ST_NO AND\
+			// DECODE(SUBSTR2(T03.MATIRAL_CODE, 2, 2), 'AA', 'J', 'AB', 'Z') = T33.SLAB_TYPE\
+			// WHERE 1 = 1\
+			// and V1.PONO = '" + bcls_ret->Tables[0].Rows[0]["PONO"].ToString() + "'";
+// DM8 SQL：
 		sqlstr = " select T03.CAST_LOT_NO,\
 			V1.ST_NO,\
 			(SELECT MAT_NO FROM VMMSM01 WHERE LSLAB_NO = T03.LSLAB_NO AND PONO = V1.PONO) MAT_NO,\
@@ -109,7 +153,7 @@ int f_wmsm01gg_inq1(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 			group by LSLAB_NO) T03 ON V1.PONO = T03.PONO\
 			left join Vpssm10 T10 ON V1.PONO = T10.PONO\
 			LEFT JOIN TMMSM33BPGG T33 ON DECODE(T10.SLAB_DEST, '41', '6', T10.C_DIV) = T33.ST_NO AND\
-			DECODE(SUBSTR2(T03.MATIRAL_CODE, 2, 2), 'AA', 'J', 'AB', 'Z') = T33.SLAB_TYPE\
+			DECODE(SUBSTR(T03.MATIRAL_CODE, 2, 2), 'AA', 'J', 'AB', 'Z') = T33.SLAB_TYPE\
 			WHERE 1 = 1\
 			and V1.PONO = '" + bcls_ret->Tables[0].Rows[0]["PONO"].ToString() + "'";
 
@@ -120,6 +164,43 @@ int f_wmsm01gg_inq1(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		cmd_inq.Close();
 
 		bcls_ret->Tables.Add();
+// DM8 适配 CHANGE-96:查询。VMMSM01。SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " select  T03.CAST_LOT_NO, V1.ST_NO,(SELECT MAT_NO FROM VMMSM01 WHERE LSLAB_NO=T03.LSLAB_NO AND PONO IN (SELECT PONO\
+			// FROM TPSSM01\
+			// WHERE CAST_LOT_NO = '" + bcls_ret->Tables[1].Rows[0]["CAST_LOT_NO"].ToString() + "')) MAT_NO, T03.*,'0'ifkepei,T33.LEN_MIN,T33.LEN_MAX,T33.MINWIDTH,T33.MAXWIDTH,T33.THICK_MIN,T33.THICK_MAX\
+			// from VPSSM11 V1\
+			// left join (select LSLAB_NO,\
+			// listagg(SLAB_NO, '/'),\
+			// max(PONO)                                                            pono,\
+			// max(SLAB_PROD_FLAG)                                                  SLAB_PROD_FLAG,\
+			// decode(max(LSLAB_NO_LENGTH), 0, max(SLAB_LEN), max(LSLAB_NO_LENGTH)) SLAB_LEN,\
+			// decode(max(LSLAB_NO_LENGTH_MAX), 0, max(SLAB_MAX_LEN),\
+				// max(LSLAB_NO_LENGTH_MAX))                                     SLAB_MAX_LEN,\
+			// decode(max(LSLAB_NO_LENGTH_MIN), 0, max(SLAB_MIN_LEN),\
+				// max(LSLAB_NO_LENGTH_MIN))                                     SLAB_MIN_LEN,\
+			// max(SLAB_WIDTH)                                                      SLAB_WIDTH,\
+			// max(SLAB_THICK)                                                      SLAB_THICK,\
+			// max(SLAB_DEST)                                                       SLAB_DEST,\
+			// max(apn)                                                             apn,\
+			// max(ORDER_NO)                                                        ORDER_NO,\
+			// max(SG_SIGN)                                                         SG_SIGN,\
+			// max(BILLET_TYPE)                                                     BILLET_TYPE,\
+			// max(MATIRAL_CODE)                                                    MATIRAL_CODE,\
+			// max(CAST_LOT_NO)                                                     CAST_LOT_NO,\
+			 // max(FACTORY_NEXT)                                                    FACTORY_NEXT\
+			// from tpssm03\
+		// where CAST_LOT_NO = '" + bcls_ret->Tables[1].Rows[0]["CAST_LOT_NO"].ToString() + "'\
+			// group by LSLAB_NO) T03 ON V1.PONO = T03.PONO\
+			// left join Vpssm10 T10 ON V1.PONO = T10.PONO\
+			// LEFT JOIN TMMSM33BPGG T33 ON DECODE(T10.SLAB_DEST, '41', '6', T10.C_DIV) = T33.ST_NO AND\
+			// DECODE(SUBSTR2(T03.MATIRAL_CODE, 2, 2), 'AA', 'J', 'AB', 'Z') = T33.SLAB_TYPE\
+			// WHERE 1 = 1 and V1.PONO IN (SELECT PONO\
+			// FROM TPSSM01\
+			// WHERE CAST_LOT_NO = '" + bcls_ret->Tables[1].Rows[0]["CAST_LOT_NO"].ToString() + "') ";
+// DM8 SQL：
 		sqlstr = " select  T03.CAST_LOT_NO, V1.ST_NO,(SELECT MAT_NO FROM VMMSM01 WHERE LSLAB_NO=T03.LSLAB_NO AND PONO IN (SELECT PONO\
 			FROM TPSSM01\
 			WHERE CAST_LOT_NO = '" + bcls_ret->Tables[1].Rows[0]["CAST_LOT_NO"].ToString() + "')) MAT_NO, T03.*,'0'ifkepei,T33.LEN_MIN,T33.LEN_MAX,T33.MINWIDTH,T33.MAXWIDTH,T33.THICK_MIN,T33.THICK_MAX\
@@ -148,7 +229,7 @@ int f_wmsm01gg_inq1(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 			group by LSLAB_NO) T03 ON V1.PONO = T03.PONO\
 			left join Vpssm10 T10 ON V1.PONO = T10.PONO\
 			LEFT JOIN TMMSM33BPGG T33 ON DECODE(T10.SLAB_DEST, '41', '6', T10.C_DIV) = T33.ST_NO AND\
-			DECODE(SUBSTR2(T03.MATIRAL_CODE, 2, 2), 'AA', 'J', 'AB', 'Z') = T33.SLAB_TYPE\
+			DECODE(SUBSTR(T03.MATIRAL_CODE, 2, 2), 'AA', 'J', 'AB', 'Z') = T33.SLAB_TYPE\
 			WHERE 1 = 1 and V1.PONO IN (SELECT PONO\
 			FROM TPSSM01\
 			WHERE CAST_LOT_NO = '" + bcls_ret->Tables[1].Rows[0]["CAST_LOT_NO"].ToString() + "') ";

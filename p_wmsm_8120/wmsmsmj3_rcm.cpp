@@ -59,7 +59,13 @@ int f_wmsmsmj3_rcm(EIClass * bcls_rec, EIClass * bcls_ret, CDbConnection * conn)
 			sprintf(s.msg, "板坯[%s]垛位[%s]跨号查询失败.", v_mat_no, tmmsm01["STOCK_PLACE_NO"]);
 			throw CApplicationException(-1, s.msg, log.Location);
 		}
-		sqlstr = "select crane_no from twm06 where hall_no = decode('" + twm04["HALL_NO"].ToString().Trim() + "', 'S00', hall_no, '" + twm04["HALL_NO"].ToString().Trim() + "') and crane_no = decode('" + v_crane_no + "', '', crane_no, null, crane_no, '" + v_crane_no + "') order by crane_no";
+		// DM8 适配 CHANGE-107：吊车号过滤：吊车号为空(NULL 或空串)时不过滤，否则按吊车号过滤；语义与原 DECODE 的 Oracle 行为一致。
+		// 改写原因：DECODE 以空串和 NULL 为搜索值，其匹配语义在 DM 未记载且随空串配置变化；改为标准 CASE(WHEN v IS NULL OR v = '')任何配置下行为确定；DM8 尚未实测。
+		// 本语句为动态拼接，共用分支面向 DM8；过滤条件与排序保持不变。
+		// 原 SQL（完整保留）：
+		// sqlstr = "select crane_no from twm06 where hall_no = decode('" + twm04["HALL_NO"].ToString().Trim() + "', 'S00', hall_no, '" + twm04["HALL_NO"].ToString().Trim() + "') and crane_no = decode('" + v_crane_no + "', '', crane_no, null, crane_no, '" + v_crane_no + "') order by crane_no";
+		// DM8 SQL：
+		sqlstr = "select crane_no from twm06 where hall_no = decode('" + twm04["HALL_NO"].ToString().Trim() + "', 'S00', hall_no, '" + twm04["HALL_NO"].ToString().Trim() + "') and crane_no = CASE WHEN '" + v_crane_no + "' IS NULL OR '" + v_crane_no + "' = '' THEN crane_no ELSE '" + v_crane_no + "' END order by crane_no";
 		cmd_inq.Close();
 		cmd_inq.SetCommandText(sqlstr);
 		Log::Trace("", __FUNCTION__, "sqlstr = [{0}]", sqlstr);

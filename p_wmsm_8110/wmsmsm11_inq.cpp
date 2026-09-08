@@ -135,6 +135,35 @@ int f_wmsmsm11_inq(EIClass * bcls_rec, EIClass * bcls_ret, CDbConnection * conn)
 		
 	
 
+// DM8 适配 CHANGE-97:查询。空值搜索 DECODE 改为标准 CASE。
+// 改写原因：空值搜索 DECODE 改为标准 CASE,不依赖 NULL 相等匹配的未记载语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+			// sqlstr =
+				// " select twma0.MAT_NO,\
+				// TWMA0.STOCK_OPER_ORDER               SERV_TYPE,\
+				// TWMA0.STOCK_OPER_ORDER,\
+				// twma1.LGORT,\
+       // twm41.C_BATCHID BATCH,\
+				// twm41.C_DELIVERYID,\
+				// twm41.C_SENDDEPT,\
+				// twm41.C_SENDSTOCK,\
+				// TWM41.C_ACCEPTSTOCK,\
+				// decode(twm62.MAT_NO, null, ' ', '1') IF_LOGI,\
+				// twm62.PRACTICE_NO,\
+				// twm62.TRUCK_NO,\
+				 // nvl(TWM41.I_RESERVECOL3, twma1.MAT_LEN)        MAT_LEN,\
+				// nvl(TWM41.DELIVERY_WIDTH, twma1.MAT_WIDTH)     MAT_WIDTH,\
+				// nvl(TWM41.DELIVERY_THICKNESS, twma1.MAT_THICK) MAT_THICK,\
+				// nvl(TWM41.N_SENDAMOUNT, twma1.MAT_WT)          MAT_WT\
+				// from twma0\
+				// left join vmmsm01 twma1 ON TWMA0.MAT_NO = TWMA1.MAT_NO\
+				// left join twmSM62 TWM62 ON TWMA0.MAT_NO = TWM62.MAT_NO AND TWM62.UNLOAD_FLAG = '0' AND TWM62.DEAL_FLAG='I'\
+				// left join twm41dj TWM41 ON TWMA0.MAT_NO = TWM41.C_BATCHUNIT AND TWM41.C_STATESIGN = '1'\
+				// WHERE TWMA0.PROC_STATUS = '0' AND TWMA0.MAT_NO != ' '\
+				// AND TWMA0.STOCK_OPER_ORDER LIKE '1%'\
+				// AND TWMA0.STOCK_OPER_ORDER NOT IN('1B') ";
+// DM8 SQL：
 			sqlstr =
 				" select twma0.MAT_NO,\
 				TWMA0.STOCK_OPER_ORDER               SERV_TYPE,\
@@ -145,7 +174,7 @@ int f_wmsmsm11_inq(EIClass * bcls_rec, EIClass * bcls_ret, CDbConnection * conn)
 				twm41.C_SENDDEPT,\
 				twm41.C_SENDSTOCK,\
 				TWM41.C_ACCEPTSTOCK,\
-				decode(twm62.MAT_NO, null, ' ', '1') IF_LOGI,\
+				CASE WHEN twm62.MAT_NO IS NULL THEN ' ' ELSE '1' END IF_LOGI,\
 				twm62.PRACTICE_NO,\
 				twm62.TRUCK_NO,\
 				 nvl(TWM41.I_RESERVECOL3, twma1.MAT_LEN)        MAT_LEN,\

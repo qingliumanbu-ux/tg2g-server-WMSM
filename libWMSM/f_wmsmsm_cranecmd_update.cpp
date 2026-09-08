@@ -139,7 +139,13 @@ int f_wmsmsm_cranecmd_update(EIClass *bcls_rec, EIClass *bcls_ret, CDbConnection
 			sqlstr_update = sqlstr_update + ",MOVE_TYPE ='" + bcls_rec->Tables["CMD_UPDATE"].Rows[i]["STOCK_OPER_ORDER_NEW"].ToString().Trim() + "'";
 		
 			SEQ_NO = "SEQ_" + bcls_rec->Tables["CMD_UPDATE"].Rows[i]["STOCK_OPER_ORDER_NEW"].ToString().Trim();
-			sqlstr = "values nextval for " + SEQ_NO;
+// DM8 适配 CHANGE-105:查询。见改写原因。
+// 改写原因：DB2 取号语法 values nextval for 改为 DM 序列伪列 select <seq>.NEXTVAL from DUAL；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+			// sqlstr = "values nextval for " + SEQ_NO;
+// DM8 SQL：
+			sqlstr = "select " + SEQ_NO + ".nextval from dual";
 			seqno = Db::QueryCDecimal(sqlstr);
 			sqlstr_update = sqlstr_update + ",CMD_SEQ =" + seqno.ToString() + "";
 			if (seqno== maxseqno)

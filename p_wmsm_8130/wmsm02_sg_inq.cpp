@@ -50,7 +50,16 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_6");
 		Log::Trace("", "", "6666666");
 
-		CString sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+// DM8 适配 CHANGE-85:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// CString sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+			  // "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' ')AS PREC_SLAB_NO ,nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
+			  // "where REST_ROLLER_NO in('5')    ";
+// DM8 SQL：
+		CString sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
 			  "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' ')AS PREC_SLAB_NO ,nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
 			  "where REST_ROLLER_NO in('5')    ";
@@ -70,7 +79,16 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_7");
 		Log::Trace("", "", "77777");
 
-		sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+// DM8 适配 CHANGE-86:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+			  // "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
+			  // "where REST_ROLLER_NO in('6')    ";
+// DM8 SQL：
+		sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
 			  "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
 			  "where REST_ROLLER_NO in('6')    ";
@@ -89,7 +107,16 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_8");
 		Log::Trace("", "", "88888");
 
-		sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+// DM8 适配 CHANGE-87:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+			  // "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
+			  // "where REST_ROLLER_NO in('7')    ";
+// DM8 SQL：
+		sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
 			  "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
 			  "where REST_ROLLER_NO in('7')    ";
@@ -107,7 +134,16 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_9");
 		Log::Trace("", "", "999999");
 
-		sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+// DM8 适配 CHANGE-88:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+			  // "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
+			  // "where REST_ROLLER_NO in('8')    ";
+// DM8 SQL：
+		sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
 			  "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no     "
 			  "where REST_ROLLER_NO in('8')    ";
@@ -127,7 +163,16 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_10");
 		Log::Trace("", "", "1010101010");
 
-		sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+// DM8 适配 CHANGE-89:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+			  // "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no  "
+			  // "where REST_ROLLER_NO like 'A%'   ";
+// DM8 SQL：
+		sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
 			  "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no  "
 			  "where REST_ROLLER_NO like 'A%'   ";
@@ -175,7 +220,16 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_11");
 		Log::Trace("", "", "B1111111111");
 
-		sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+// DM8 适配 CHANGE-90:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
+			  // "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no  "
+			  // "where  REST_ROLLER_NO like 'B%'  ";
+// DM8 SQL：
+		sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,nvl(a.SLAB_DEST,' ') AS A,   "
 			  "nvl(a.slab_print_mode,' ')AS B ,nvl(a.slab_burr_type,' ')AS C,nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' ')as D,nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on a.mat_no = b.mat_no  "
 			  "where  REST_ROLLER_NO like 'B%'  ";
@@ -242,7 +296,15 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_12");
 		Log::Trace("", "", "1212121212");
 
-		sql = "SELECT  mat_no,value(hold_flag,' '),stock_place_no  as location,nvl(slab_cut_time,' ') as slab_cut_time,' ',' ',' ',nvl(prec_slab_no,  ' '),nvl(fix_flag,' '),' ',' ',' '  " 
+// DM8 适配 CHANGE-91:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  mat_no,value(hold_flag,' '),stock_place_no  as location,nvl(slab_cut_time,' ') as slab_cut_time,' ',' ',' ',nvl(prec_slab_no,  ' '),nvl(fix_flag,' '),' ',' ',' '  " 
+			  // "from tmmsm01       "
+			  // "where stock_place_no like '601' and mat_position in('1', '2') ";
+// DM8 SQL：
+		sql = "SELECT  mat_no,nvl(hold_flag,' '),stock_place_no  as location,nvl(slab_cut_time,' ') as slab_cut_time,' ',' ',' ',nvl(prec_slab_no,  ' '),nvl(fix_flag,' '),' ',' ',' '  " 
 			  "from tmmsm01       "
 			  "where stock_place_no like '601' and mat_position in('1', '2') ";
 		Log::Info("", __FUNCTION__, "===sql==== [{0}]", sql);
@@ -260,7 +322,15 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_13");
 		Log::Trace("", "", "1313131313");
 
-		sql = "SELECT  mat_no, value(hold_flag, ' '), stock_place_no  as location, nvl(slab_cut_time, ' ') as slab_cut_time, ' ', ' ', ' ', nvl(prec_slab_no, ' '), nvl(fix_flag, ' '), ' ', ' ', ' '  " 
+// DM8 适配 CHANGE-92:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  mat_no, value(hold_flag, ' '), stock_place_no  as location, nvl(slab_cut_time, ' ') as slab_cut_time, ' ', ' ', ' ', nvl(prec_slab_no, ' '), nvl(fix_flag, ' '), ' ', ' ', ' '  " 
+			// "from tmmsm01       "
+			// "where stock_place_no like '602' and mat_position in('1', '2') ";
+// DM8 SQL：
+		sql = "SELECT  mat_no, nvl(hold_flag, ' '), stock_place_no  as location, nvl(slab_cut_time, ' ') as slab_cut_time, ' ', ' ', ' ', nvl(prec_slab_no, ' '), nvl(fix_flag, ' '), ' ', ' ', ' '  " 
 			"from tmmsm01       "
 			"where stock_place_no like '602' and mat_position in('1', '2') ";
 		Log::Info("", __FUNCTION__, "===sql==== [{0}]", sql);
@@ -277,7 +347,17 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_14");
 		Log::Trace("", "", "1414141414");
 
-		sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,' ',' ',' ',  "
+// DM8 适配 CHANGE-93:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = "SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,' ',' ',' ',  "
+			// "nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' '),nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
+			// "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on  a.mat_no = b.mat_no  "
+			// "where REST_ROLLER_NO = 'R1' "
+			// "order by slab_cut_time desc ";
+// DM8 SQL：
+		sql = "SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,' ',' ',' ',  "
 			"nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' '),nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')  "
 			"from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on  a.mat_no = b.mat_no  "
 			"where REST_ROLLER_NO = 'R1' "
@@ -299,7 +379,17 @@ int f_wmsm02_sg_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		bcls_ret->Tables.Add("TABLE_15");
 		Log::Trace("", "", "1515151515");
 
-		sql = " SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,' ',' ',' ',   "
+// DM8 适配 CHANGE-94:查询。见改写原因。
+// 改写原因：DB2 同义词 VALUE 改为 DM 文档支持的 NVL(两参数:返回第一个非空值)；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sql = " SELECT  a.mat_no,value(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,' ',' ',' ',   "
+			  // "nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' '),nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')    "
+			  // "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on  a.mat_no = b.mat_no   "
+			  // "where REST_ROLLER_NO = 'R2'   "
+			  // "order by slab_cut_time desc ";
+// DM8 SQL：
+		sql = " SELECT  a.mat_no,nvl(hold_flag,' '),a.rest_roller_no as location,nvl(b.slab_cut_time,' ') as slab_cut_time,' ',' ',' ',   "
 			  "nvl(b.prec_slab_no,  ' '),nvl(a.fix_flag,' '),nvl(a.qual_id,' '),nvl(a.auto_wt_flag,' '),nvl(a.hot_send_flag,' ')    "
 			  "from TWMM1 a left outer join(select * from tmmsm01 where mat_position in('1', '2')) b on  a.mat_no = b.mat_no   "
 			  "where REST_ROLLER_NO = 'R2'   "

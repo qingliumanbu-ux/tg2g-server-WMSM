@@ -242,16 +242,37 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-03：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；DAYS() 天数差改用 DATEDIFF(DAY,起点,终点)；空值搜索 DECODE 改为标准 CASE,不依赖 NULL 相等匹配的未记载语义；二元标量 MAX 改为空值守卫的 GREATEST,空值传播与 DB2 标量 MAX 一致；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT A.CODE DEP_NAME, C.BREAKDN_DATE, C.REMARK REMARK_BFR, B.REMARK,"
+						// " DECODE(B.BREAKDN_DATE, NULL, DAYS(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS) - DAYS(TO_DATE(C.BREAKDN_DATE,'YYYYMMDD')), 0) OPERATE_CYCLE,"
+						// " MAX(C.TOTAL_OPERATE_CYCLE, DECODE(B.REMARK, NULL, DAYS(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS) - DAYS(TO_DATE(C.BREAKDN_DATE,'YYYYMMDD')), B.TOTAL_OPERATE_CYCLE)) TOTAL_OPERATE_CYCLE"
+						// " FROM TEP0002 A"
+						// " LEFT JOIN TFOSMT02A B ON A.CODE = B.DEP_NAME AND B.BREAKDN_DATE = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " LEFT JOIN"
+						// " (SELECT DEP_NAME, REMARK, BREAKDN_DATE, TOTAL_OPERATE_CYCLE FROM TFOSMT02A"
+						// " WHERE (DEP_NAME, BREAKDN_DATE) IN"
+						// " (SELECT DEP_NAME, MAX(BREAKDN_DATE) FROM TFOSMT02A WHERE BREAKDN_DATE < TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') GROUP BY DEP_NAME)"
+						// " ) C ON A.CODE = C.DEP_NAME"
+						// " LEFT JOIN TFOSMT02B D ON A.CODE = D.DEP_NAME"
+						// " WHERE A.CODE_CLASS = 'FOSMT1'"
+						// " AND A.CODE_DESC_2_CONTENT != ' '"
+						// " ORDER BY A.CODE_DESC_2_CONTENT"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT A.CODE DEP_NAME, C.BREAKDN_DATE, C.REMARK REMARK_BFR, B.REMARK,"
-						" DECODE(B.BREAKDN_DATE, NULL, DAYS(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS) - DAYS(TO_DATE(C.BREAKDN_DATE,'YYYYMMDD')), 0) OPERATE_CYCLE,"
-						" MAX(C.TOTAL_OPERATE_CYCLE, DECODE(B.REMARK, NULL, DAYS(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS) - DAYS(TO_DATE(C.BREAKDN_DATE,'YYYYMMDD')), B.TOTAL_OPERATE_CYCLE)) TOTAL_OPERATE_CYCLE"
+						" CASE WHEN B.BREAKDN_DATE IS NULL THEN DATEDIFF(DAY, TO_DATE(C.BREAKDN_DATE,'YYYYMMDD'), TO_DATE(@DATE_TIME,'YYYYMMDD') - 1) ELSE 0 END OPERATE_CYCLE,"
+						" CASE WHEN C.TOTAL_OPERATE_CYCLE IS NULL OR CASE WHEN B.REMARK IS NULL THEN DATEDIFF(DAY, TO_DATE(C.BREAKDN_DATE,'YYYYMMDD'), TO_DATE(@DATE_TIME,'YYYYMMDD') - 1) ELSE B.TOTAL_OPERATE_CYCLE END IS NULL THEN NULL ELSE GREATEST(C.TOTAL_OPERATE_CYCLE, CASE WHEN B.REMARK IS NULL THEN DATEDIFF(DAY, TO_DATE(C.BREAKDN_DATE,'YYYYMMDD'), TO_DATE(@DATE_TIME,'YYYYMMDD') - 1) ELSE B.TOTAL_OPERATE_CYCLE END) END TOTAL_OPERATE_CYCLE"
 						" FROM TEP0002 A"
-						" LEFT JOIN TFOSMT02A B ON A.CODE = B.DEP_NAME AND B.BREAKDN_DATE = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT02A B ON A.CODE = B.DEP_NAME AND B.BREAKDN_DATE = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" LEFT JOIN"
 						" (SELECT DEP_NAME, REMARK, BREAKDN_DATE, TOTAL_OPERATE_CYCLE FROM TFOSMT02A"
 						" WHERE (DEP_NAME, BREAKDN_DATE) IN"
-						" (SELECT DEP_NAME, MAX(BREAKDN_DATE) FROM TFOSMT02A WHERE BREAKDN_DATE < TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') GROUP BY DEP_NAME)"
+						" (SELECT DEP_NAME, MAX(BREAKDN_DATE) FROM TFOSMT02A WHERE BREAKDN_DATE < TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') GROUP BY DEP_NAME)"
 						" ) C ON A.CODE = C.DEP_NAME"
 						" LEFT JOIN TFOSMT02B D ON A.CODE = D.DEP_NAME"
 						" WHERE A.CODE_CLASS = 'FOSMT1'"
@@ -276,15 +297,35 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+					// DM8 适配 CHANGE-02：生成查询日期之前的三天，保留原连接、排序和参数。
+					// 改写原因：日期加减改用整数天，SYSIBM.SYSDUMMY1 改为 DUAL；YYYYMMDD 输入尚未实测。
+					// 本共用分支面向 DM8，其他 DB_KIND 标签也会执行此 SQL；递归查询尚未实测。
+					// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B.*"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// " ORDER BY TO_CHAR(A.TIME,'YYYYMMDD')"
+						// ;
+					// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B.*"
 						" FROM A"
 						" LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
@@ -306,6 +347,37 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-04：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT"
+						// " SUM(PLAN_CHARGE_1) PLAN_CHARGE_1, SUM(PLAN_CHARGE_2) PLAN_CHARGE_2,"
+						// " SUM(PRODUCT_CHARGE_1) PRODUCT_CHARGE_1, SUM(PRODUCT_CHARGE_2) PRODUCT_CHARGE_2,"
+						// " SUM(SLAB_WT_1) SLAB_WT_1, SUM(SLAB_WT_2) SLAB_WT_2,"
+						// " SUM(CC_REMAIN_NUM_1) CC_REMAIN_NUM_1, SUM(CC_REMAIN_NUM_2) CC_REMAIN_NUM_2,"
+						// " SUM(TOTAL_SLAB_WT) TOTAL_SLAB_WT, SUM(PLAN_PROD_DAY) PLAN_PROD_DAY, SUM(REAL_PRODUCT_DAY) REAL_PRODUCT_DAY,"
+						// " DECODE(SUM(PRODUCT_CHARGE_1), 0, 0, ROUND(100.0 * SUM(CC_REMAIN_NUM_1) / SUM(PRODUCT_CHARGE_1),1)) CC_REMAIN_RATE_1,"
+						// " DECODE(SUM(PRODUCT_CHARGE_2), 0, 0, ROUND(100.0 * SUM(CC_REMAIN_NUM_2) / SUM(PRODUCT_CHARGE_2),1)) CC_REMAIN_RATE_2,"
+						// " 1.000 * SUM(SLAB_WT_2) / SUM(TOTAL_SLAB_WT) PRODUCT_RATE,"
+						// " MAX(TIME_PROGRESS) TIME_PROGRESS,"
+						// " DECODE(MAX(CAST(B1.REMARK AS INTEGER) + CAST(B2.REMARK AS INTEGER)), 0, 0, SUM(TOTAL_SLAB_WT) / MAX(CAST(B1.REMARK AS INTEGER) + CAST(B2.REMARK AS INTEGER)) * 100) PROD_PROGRESS,"
+						// " DECODE(MAX(CAST(B1.REMARK AS INTEGER)), 0, 0, SUM(SLAB_WT_1) / MAX(CAST(B1.REMARK AS INTEGER)) * 100) PROD_PROGRESS_1,"
+						// " DECODE(MAX(CAST(B2.REMARK AS INTEGER)), 0, 0, SUM(SLAB_WT_2) / MAX(CAST(B2.REMARK AS INTEGER)) * 100) PROD_PROGRESS_2,"
+						// " MAX(B1.REMARK) PLAN_SLAB_WT_1, MAX(B2.REMARK) PLAN_SLAB_WT_2,"
+						// " MAX(CAST(B1.REMARK AS INTEGER) + CAST(B2.REMARK AS INTEGER)) PLAN_SLAB_WT,"
+						// " '合计' DATE_TIME"
+						// " FROM TFOSMT03A A"
+						// " LEFT JOIN TFOSMT96B B1 ON B1.DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6)"
+						// " AND B1.ITEM_ENAME = 'FOSMT03-107'"
+						// " LEFT JOIN TFOSMT96B B2 ON B2.DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6)"
+						// " AND B2.ITEM_ENAME = 'FOSMT03-108'"
+						// " WHERE 1 = 1"
+						// " AND A.DATE_TIME < @DATE_TIME"
+						// " AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6) || '01'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT"
 						" SUM(PLAN_CHARGE_1) PLAN_CHARGE_1, SUM(PLAN_CHARGE_2) PLAN_CHARGE_2,"
@@ -324,13 +396,13 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" MAX(CAST(B1.REMARK AS INTEGER) + CAST(B2.REMARK AS INTEGER)) PLAN_SLAB_WT,"
 						" '合计' DATE_TIME"
 						" FROM TFOSMT03A A"
-						" LEFT JOIN TFOSMT96B B1 ON B1.DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6)"
+						" LEFT JOIN TFOSMT96B B1 ON B1.DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD'), 1, 6)"
 						" AND B1.ITEM_ENAME = 'FOSMT03-107'"
-						" LEFT JOIN TFOSMT96B B2 ON B2.DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6)"
+						" LEFT JOIN TFOSMT96B B2 ON B2.DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD'), 1, 6)"
 						" AND B2.ITEM_ENAME = 'FOSMT03-108'"
 						" WHERE 1 = 1"
 						" AND A.DATE_TIME < @DATE_TIME"
-						" AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6) || '01'"
+						" AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD'), 1, 6) || '01'"
 						;
 					break;
 				}
@@ -382,15 +454,35 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-05：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME, 'YYYYMMDD') DATE_TIME,"
+						// " COALESCE(B.PLAN_CHARGE_2, 0) PLAN_CHARGE, COALESCE(B.PRODUCT_CHARGE_2, 0) PRODUCT_CHARGE"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME, 'YYYYMMDD') DATE_TIME,"
 						" COALESCE(B.PLAN_CHARGE_2, 0) PLAN_CHARGE, COALESCE(B.PRODUCT_CHARGE_2, 0) PRODUCT_CHARGE"
 						" FROM A"
@@ -415,15 +507,35 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-06：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " ROUND(COALESCE(B.STOCK_TOTAL_WT_1, 0),0) STOCK_TOTAL_WT_1, ROUND(COALESCE(B.STOCK_TOTAL_WT_2, 0),0) STOCK_TOTAL_WT_2"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" ROUND(COALESCE(B.STOCK_TOTAL_WT_1, 0),0) STOCK_TOTAL_WT_1, ROUND(COALESCE(B.STOCK_TOTAL_WT_2, 0),0) STOCK_TOTAL_WT_2"
 						" FROM A"
@@ -448,15 +560,36 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-07：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " CAST(ROUND(COALESCE(B.CC_REMAIN_RATE_1, 0),1) AS DECIMAL(4,1)) CC_REMAIN_RATE_1,"
+						// " CAST(ROUND(COALESCE(B.CC_REMAIN_RATE_2, 0),1) AS DECIMAL(4,1)) CC_REMAIN_RATE_2"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" CAST(ROUND(COALESCE(B.CC_REMAIN_RATE_1, 0),1) AS DECIMAL(4,1)) CC_REMAIN_RATE_1,"
 						" CAST(ROUND(COALESCE(B.CC_REMAIN_RATE_2, 0),1) AS DECIMAL(4,1)) CC_REMAIN_RATE_2"
@@ -482,15 +615,38 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-08：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " B.SMELT_CHARGE_1 SMELT_CHARGE, B.DIR_CHARGE_RATE_1 DIR_CHARGE_RATE, B.SHALLOW_CHARGE_RATE_1 SHALLOW_CHARGE_RATE,"
+						// " B.TOL_BOF_STEEL_WT_1 TOL_BOF_STEEL_WT, B.AVG_STEEL_WT_1 AVG_STEEL_WT, B.AVG_SLAB_WT_1 AVG_SLAB_WT,"
+						// " B.AVG_BOF_IRON_WT_1 AVG_BOF_IRON_WT, B.MOLTIRON_WT1 MOLTIRON_WT,"
+						// " B.AVG_TPD_IRON_WT_1 AVG_TPD_IRON_WT, CAST(ROUND(1.0000 * B.IRON_SLAB_RATE_1 / 100, 4) AS DECIMAL(5,4)) IRON_SLAB_RATE"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" B.SMELT_CHARGE_1 SMELT_CHARGE, B.DIR_CHARGE_RATE_1 DIR_CHARGE_RATE, B.SHALLOW_CHARGE_RATE_1 SHALLOW_CHARGE_RATE,"
 						" B.TOL_BOF_STEEL_WT_1 TOL_BOF_STEEL_WT, B.AVG_STEEL_WT_1 AVG_STEEL_WT, B.AVG_SLAB_WT_1 AVG_SLAB_WT,"
@@ -515,6 +671,31 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-09：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT"
+						// " SUM(SMELT_CHARGE_1) SMELT_CHARGE,"
+						// " SUM(DIR_CHARGE_RATE_1 * SMELT_CHARGE_1) / SUM(SMELT_CHARGE_1) DIR_CHARGE_RATE,"
+						// " SUM(SHALLOW_CHARGE_RATE_1 * SMELT_CHARGE_1) / SUM(SMELT_CHARGE_1) SHALLOW_CHARGE_RATE,"
+						// " SUM(TOL_BOF_STEEL_WT_1) TOL_BOF_STEEL_WT,"
+						// " SUM(TOL_BOF_STEEL_WT_1) / SUM(SMELT_CHARGE_1) AVG_STEEL_WT,"
+						// " SUM(SLAB_WT_1) / SUM(PRODUCT_CHARGE_1) AVG_SLAB_WT,"
+						// " SUM(MOLTIRON_WT1) / SUM(SMELT_CHARGE_1) AVG_BOF_IRON_WT,"
+						// " SUM(MOLTIRON_WT1) MOLTIRON_WT,"
+						// " SUM(AVG_TPD_IRON_WT_1 * TPD_WT_1) / SUM(TPD_WT_1) AVG_TPD_IRON_WT,"
+						// " 1.0000 * (1.0000 * SUM(AVG_TPD_IRON_WT_1 * TPD_WT_1) / SUM(TPD_WT_1))"
+						// " / (SUM(SLAB_WT_1) / SUM(PRODUCT_CHARGE_1))"
+						// " IRON_SLAB_RATE,"
+						// " '合计' DATE_TIME"
+						// " FROM TFOSMT03A A"
+						// " WHERE 1 = 1"
+						// " AND A.DATE_TIME < @DATE_TIME"
+						// " AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6) || '01'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT"
 						" SUM(SMELT_CHARGE_1) SMELT_CHARGE,"
@@ -533,7 +714,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" FROM TFOSMT03A A"
 						" WHERE 1 = 1"
 						" AND A.DATE_TIME < @DATE_TIME"
-						" AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6) || '01'"
+						" AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD'), 1, 6) || '01'"
 						;
 					break;
 				}
@@ -557,15 +738,38 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-10：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " B.SMELT_CHARGE_2 SMELT_CHARGE, B.DIR_CHARGE_RATE_2 DIR_CHARGE_RATE, B.SHALLOW_CHARGE_RATE_2 SHALLOW_CHARGE_RATE,"
+						// " B.TOL_BOF_STEEL_WT_2 TOL_BOF_STEEL_WT, B.AVG_STEEL_WT_2 AVG_STEEL_WT, B.AVG_SLAB_WT_2 AVG_SLAB_WT,"
+						// " B.AVG_BOF_IRON_WT_2 AVG_BOF_IRON_WT, B.MOLTIRON_WT2 MOLTIRON_WT,"
+						// " B.AVG_TPD_IRON_WT_2 AVG_TPD_IRON_WT, CAST(ROUND(1.0000 * B.IRON_SLAB_RATE_2 / 100, 4) AS DECIMAL(5,4)) IRON_SLAB_RATE"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" B.SMELT_CHARGE_2 SMELT_CHARGE, B.DIR_CHARGE_RATE_2 DIR_CHARGE_RATE, B.SHALLOW_CHARGE_RATE_2 SHALLOW_CHARGE_RATE,"
 						" B.TOL_BOF_STEEL_WT_2 TOL_BOF_STEEL_WT, B.AVG_STEEL_WT_2 AVG_STEEL_WT, B.AVG_SLAB_WT_2 AVG_SLAB_WT,"
@@ -590,6 +794,31 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-11：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT"
+						// " SUM(SMELT_CHARGE_2) SMELT_CHARGE,"
+						// " SUM(DIR_CHARGE_RATE_2 * SMELT_CHARGE_2) / SUM(SMELT_CHARGE_2) DIR_CHARGE_RATE,"
+						// " SUM(SHALLOW_CHARGE_RATE_2 * SMELT_CHARGE_2) / SUM(SMELT_CHARGE_2) SHALLOW_CHARGE_RATE,"
+						// " SUM(TOL_BOF_STEEL_WT_2) TOL_BOF_STEEL_WT,"
+						// " SUM(TOL_BOF_STEEL_WT_2) / SUM(SMELT_CHARGE_2) AVG_STEEL_WT,"
+						// " SUM(SLAB_WT_2) / SUM(PRODUCT_CHARGE_2) AVG_SLAB_WT,"
+						// " SUM(MOLTIRON_WT2) / SUM(SMELT_CHARGE_2) AVG_BOF_IRON_WT,"
+						// " SUM(MOLTIRON_WT2) MOLTIRON_WT,"
+						// " SUM(AVG_TPD_IRON_WT_2 * TPD_WT_2) / SUM(TPD_WT_2) AVG_TPD_IRON_WT,"
+						// " 1.0000 * (1.0000 * SUM(AVG_TPD_IRON_WT_2 * TPD_WT_2) / SUM(TPD_WT_2))"
+						// " / (SUM(SLAB_WT_2) / SUM(PRODUCT_CHARGE_2))"
+						// " IRON_SLAB_RATE,"
+						// " '合计' DATE_TIME"
+						// " FROM TFOSMT03A A"
+						// " WHERE 1 = 1"
+						// " AND A.DATE_TIME < @DATE_TIME"
+						// " AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6) || '01'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT"
 						" SUM(SMELT_CHARGE_2) SMELT_CHARGE,"
@@ -608,7 +837,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" FROM TFOSMT03A A"
 						" WHERE 1 = 1"
 						" AND A.DATE_TIME < @DATE_TIME"
-						" AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD'), 1, 6) || '01'"
+						" AND A.DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD'), 1, 6) || '01'"
 						;
 					break;
 				}
@@ -632,15 +861,34 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-12：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B.IRON_SLAB_RATE_1 / 100 IRON_SLAB_RATE"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B.IRON_SLAB_RATE_1 / 100 IRON_SLAB_RATE"
 						" FROM A"
 						" LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
@@ -664,15 +912,34 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-13：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B.IRON_SLAB_RATE_2 / 100 IRON_SLAB_RATE"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B.IRON_SLAB_RATE_2 / 100 IRON_SLAB_RATE"
 						" FROM A"
 						" LEFT JOIN TFOSMT03A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME"
@@ -696,15 +963,55 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-14：生成查询日期之前10天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；空值搜索 DECODE 改为标准 CASE,不依赖 NULL 相等匹配的未记载语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " COALESCE(B1.IRON_RELEASE_WT,0) IRON_RELEASE_WT_1, COALESCE(B1.SEQ_NO,0) DEDUCT_PT_1,"
+						// " COALESCE(B2.IRON_RELEASE_WT,0) IRON_RELEASE_WT_2, COALESCE(B2.SEQ_NO,0) DEDUCT_PT_2,"
+						// " COALESCE(B3.IRON_RELEASE_WT,0) IRON_RELEASE_WT_3, COALESCE(B3.SEQ_NO,0) DEDUCT_PT_3,"
+						// " COALESCE(B4.IRON_RELEASE_WT,0) IRON_RELEASE_WT_4, COALESCE(B4.SEQ_NO,0) DEDUCT_PT_4,"
+						// " COALESCE(B5.IRON_RELEASE_WT,0) IRON_RELEASE_WT_5, COALESCE(B5.SEQ_NO,0) DEDUCT_PT_5,"
+						// " COALESCE(B6.IRON_RELEASE_WT,0) IRON_RELEASE_WT_6, COALESCE(B6.SEQ_NO,0) DEDUCT_PT_6,"
+						// " COALESCE(B7.IRON_RELEASE_WT,0) IRON_RELEASE_WT_7, COALESCE(B7.SEQ_NO,0) DEDUCT_PT_7,"
+						// " DECODE(B1.REMARK, NULL, '', TRIM(B1.REMARK)) ||"
+						// " DECODE(B2.REMARK, NULL, '', TRIM(B2.REMARK)) ||"
+						// " DECODE(B3.REMARK, NULL, '', TRIM(B3.REMARK)) ||"
+						// " DECODE(B4.REMARK, NULL, '', TRIM(B4.REMARK)) ||"
+						// " DECODE(B5.REMARK, NULL, '', TRIM(B5.REMARK)) ||"
+						// " DECODE(B6.REMARK, NULL, '', TRIM(B6.REMARK)) ||"
+						// " DECODE(B7.REMARK, NULL, '', TRIM(B7.REMARK))"
+						// " REMARK"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT03B B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.DEP_NAME = '02'"
+						// " LEFT JOIN TFOSMT03B B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.DEP_NAME = '03'"
+						// " LEFT JOIN TFOSMT03B B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.DEP_NAME = '05'"
+						// " LEFT JOIN TFOSMT03B B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.DEP_NAME = '04'"
+						// " LEFT JOIN TFOSMT03B B5 ON TO_CHAR(A.TIME,'YYYYMMDD') = B5.DATE_TIME AND B5.DEP_NAME = '01'"
+						// " LEFT JOIN TFOSMT03B B6 ON TO_CHAR(A.TIME,'YYYYMMDD') = B6.DATE_TIME AND B6.DEP_NAME = '07'"
+						// " LEFT JOIN TFOSMT03B B7 ON TO_CHAR(A.TIME,'YYYYMMDD') = B7.DATE_TIME AND B7.DEP_NAME = '10'"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" COALESCE(B1.IRON_RELEASE_WT,0) IRON_RELEASE_WT_1, COALESCE(B1.SEQ_NO,0) DEDUCT_PT_1,"
 						" COALESCE(B2.IRON_RELEASE_WT,0) IRON_RELEASE_WT_2, COALESCE(B2.SEQ_NO,0) DEDUCT_PT_2,"
@@ -713,13 +1020,13 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" COALESCE(B5.IRON_RELEASE_WT,0) IRON_RELEASE_WT_5, COALESCE(B5.SEQ_NO,0) DEDUCT_PT_5,"
 						" COALESCE(B6.IRON_RELEASE_WT,0) IRON_RELEASE_WT_6, COALESCE(B6.SEQ_NO,0) DEDUCT_PT_6,"
 						" COALESCE(B7.IRON_RELEASE_WT,0) IRON_RELEASE_WT_7, COALESCE(B7.SEQ_NO,0) DEDUCT_PT_7,"
-						" DECODE(B1.REMARK, NULL, '', TRIM(B1.REMARK)) ||"
-						" DECODE(B2.REMARK, NULL, '', TRIM(B2.REMARK)) ||"
-						" DECODE(B3.REMARK, NULL, '', TRIM(B3.REMARK)) ||"
-						" DECODE(B4.REMARK, NULL, '', TRIM(B4.REMARK)) ||"
-						" DECODE(B5.REMARK, NULL, '', TRIM(B5.REMARK)) ||"
-						" DECODE(B6.REMARK, NULL, '', TRIM(B6.REMARK)) ||"
-						" DECODE(B7.REMARK, NULL, '', TRIM(B7.REMARK))"
+						" CASE WHEN B1.REMARK IS NULL THEN '' ELSE TRIM(B1.REMARK) END ||"
+						" CASE WHEN B2.REMARK IS NULL THEN '' ELSE TRIM(B2.REMARK) END ||"
+						" CASE WHEN B3.REMARK IS NULL THEN '' ELSE TRIM(B3.REMARK) END ||"
+						" CASE WHEN B4.REMARK IS NULL THEN '' ELSE TRIM(B4.REMARK) END ||"
+						" CASE WHEN B5.REMARK IS NULL THEN '' ELSE TRIM(B5.REMARK) END ||"
+						" CASE WHEN B6.REMARK IS NULL THEN '' ELSE TRIM(B6.REMARK) END ||"
+						" CASE WHEN B7.REMARK IS NULL THEN '' ELSE TRIM(B7.REMARK) END"
 						" REMARK"
 						" FROM A"
 						" LEFT JOIN TFOSMT03B B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.DEP_NAME = '02'"
@@ -802,6 +1109,25 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-15：取查询日期前推3日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
+							// " A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
+							// " REMARK_1 PERIOD_TIME,"
+							// " B.REMARK, B.REMARK_2 STOP_TOTAL_TIME, B.DEP_NAME"
+							// " FROM TFOSMT04A A"
+							// " LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
+							// " WHERE A.FACTORY_DIV = 'A10'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							// " ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
 							" A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
@@ -811,9 +1137,9 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
 							" WHERE A.FACTORY_DIV = 'A10'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'))"
 							" ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
 							;
 						break;
@@ -828,6 +1154,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-16：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
+							// " A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
+							// " REMARK_1 PERIOD_TIME,"
+							// " B.REMARK, B.REMARK_2 STOP_TOTAL_TIME, B.DEP_NAME"
+							// " FROM TFOSMT04A A"
+							// " LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
+							// " WHERE A.FACTORY_DIV = 'A10'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							// " ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
 							" A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
@@ -837,7 +1180,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
 							" WHERE A.FACTORY_DIV = 'A10'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
 							" ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
 							;
 						break;
@@ -862,6 +1205,25 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-17：取查询日期前推3日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
+							// " A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
+							// " REMARK_1 PERIOD_TIME,"
+							// " B.REMARK, B.REMARK_2 STOP_TOTAL_TIME, B.DEP_NAME"
+							// " FROM TFOSMT04A A"
+							// " LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
+							// " WHERE A.FACTORY_DIV = 'A20'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							// " ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
 							" A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
@@ -871,9 +1233,9 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
 							" WHERE A.FACTORY_DIV = 'A20'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'))"
 							" ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
 							;
 						break;
@@ -888,6 +1250,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-18：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
+							// " A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
+							// " REMARK_1 PERIOD_TIME,"
+							// " B.REMARK, B.REMARK_2 STOP_TOTAL_TIME, B.DEP_NAME"
+							// " FROM TFOSMT04A A"
+							// " LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
+							// " WHERE A.FACTORY_DIV = 'A20'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							// " ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT A.FACTORY_DIV, A.DATE_TIME, A.SHIFT_NO, A.SHIFT_GROUP,"
 							" A.PLAN_CHARGE, A.SMELT_CHARGE, A.PRODUCT_CHARGE, B.ADJUST_CHARGE,"
@@ -897,7 +1276,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" LEFT JOIN TFOSMT04B B ON A.FACTORY_DIV = B.FACTORY_DIV AND A.DATE_TIME = B.DATE_TIME AND A.SHIFT_NO = B.SHIFT_NO"
 							" WHERE A.FACTORY_DIV = 'A20'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
 							" ORDER BY A.DATE_TIME, A.SHIFT_NO, B.CHARGE_NO"
 							;
 						break;
@@ -922,6 +1301,26 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-19：取查询日期前推3日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
+							// " DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
+							// " TO_NUMBER(ELM_BOF_VALUE) ELM_BOF_VALUE_O,"
+							// " TO_NUMBER(ELM_SR_VALUE) ELM_SR_VALUE_O,"
+							// " TO_NUMBER(ELM_CC_VALUE) ELM_CC_VALUE_O,"
+							// " DEP_NAME, REMARK"
+							// " FROM TFOSMT05A A"
+							// " WHERE FACTORY_DIV = 'A10'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							// " ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
 							" DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
@@ -932,9 +1331,9 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" FROM TFOSMT05A A"
 							" WHERE FACTORY_DIV = 'A10'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'))"
 							" ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
 							;
 						break;
@@ -949,6 +1348,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-20：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
+							// " DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
+							// " TO_NUMBER(ELM_BOF_VALUE) ELM_BOF_VALUE_O,"
+							// " TO_NUMBER(ELM_SR_VALUE) ELM_SR_VALUE_O,"
+							// " TO_NUMBER(ELM_CC_VALUE) ELM_CC_VALUE_O,"
+							// " DEP_NAME, REMARK"
+							// " FROM TFOSMT05A A"
+							// " WHERE FACTORY_DIV = 'A10'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							// " ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
 							" DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
@@ -959,7 +1376,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" FROM TFOSMT05A A"
 							" WHERE FACTORY_DIV = 'A10'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
 							" ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
 							;
 						break;
@@ -1102,6 +1519,26 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-21：取查询日期前推3日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
+							// " DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
+							// " TO_NUMBER(ELM_BOF_VALUE) ELM_BOF_VALUE_O,"
+							// " TO_NUMBER(ELM_SR_VALUE) ELM_SR_VALUE_O,"
+							// " TO_NUMBER(ELM_CC_VALUE) ELM_CC_VALUE_O,"
+							// " DEP_NAME, REMARK"
+							// " FROM TFOSMT05A A"
+							// " WHERE FACTORY_DIV = 'A20'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							// " ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
 							" DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
@@ -1112,9 +1549,9 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" FROM TFOSMT05A A"
 							" WHERE FACTORY_DIV = 'A20'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
-							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3,'YYYYMMDD') AND A.SHIFT_NO <> '1')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
+							" OR A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'))"
 							" ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
 							;
 						break;
@@ -1129,6 +1566,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-22：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
+							// " DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
+							// " TO_NUMBER(ELM_BOF_VALUE) ELM_BOF_VALUE_O,"
+							// " TO_NUMBER(ELM_SR_VALUE) ELM_SR_VALUE_O,"
+							// " TO_NUMBER(ELM_CC_VALUE) ELM_CC_VALUE_O,"
+							// " DEP_NAME, REMARK"
+							// " FROM TFOSMT05A A"
+							// " WHERE FACTORY_DIV = 'A20'"
+							// " AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
+							// " OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							// " ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT ROW_NUMBER() OVER (ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO) SEQ_NO,"
 							" DATE_TIME, SHIFT_NO, SHIFT_GROUP, HEAT_NO, ST_NO, ELM_DESC, TO_NUMBER(MAIN_MIN) MAIN_MIN, TO_NUMBER(MAIN_MAX) MAIN_MAX,"
@@ -1139,7 +1594,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 							" FROM TFOSMT05A A"
 							" WHERE FACTORY_DIV = 'A20'"
 							" AND ((A.DATE_TIME = @DATE_TIME AND A.SHIFT_NO = '1')"
-							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
+							" OR (A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') AND A.SHIFT_NO <> '1'))"
 							" ORDER BY DATE_TIME, PROD_TIME, HEAT_NO, SEQ_NO"
 							;
 						break;
@@ -1279,15 +1734,37 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-23：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " COUNT(DISTINCT HEAT_NO) COUNT_PONO"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT05A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A10'"
+						// " WHERE 1 = 1"
+						// " GROUP BY A.TIME"
+						// " ORDER BY A.TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" COUNT(DISTINCT HEAT_NO) COUNT_PONO"
 						" FROM A"
@@ -1314,15 +1791,37 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-24：生成查询日期之前7天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " COUNT(DISTINCT HEAT_NO) COUNT_PONO"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT05A B ON TO_CHAR(A.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " WHERE 1 = 1"
+						// " GROUP BY A.TIME"
+						// " ORDER BY A.TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 7"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" COUNT(DISTINCT HEAT_NO) COUNT_PONO"
 						" FROM A"
@@ -1349,12 +1848,26 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-25：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT ELM_DESC, COUNT(ELM_DESC) COUNT_PONO"
+						// " FROM TFOSMT05A"
+						// " WHERE FACTORY_DIV = 'A10'"
+						// " AND DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) || '01'"
+						// " AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " GROUP BY ELM_DESC"
+						// " ORDER BY ELM_DESC"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT ELM_DESC, COUNT(ELM_DESC) COUNT_PONO"
 						" FROM TFOSMT05A"
 						" WHERE FACTORY_DIV = 'A10'"
-						" AND DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) || '01'"
-						" AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" AND DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,6) || '01'"
+						" AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" GROUP BY ELM_DESC"
 						" ORDER BY ELM_DESC"
 						;
@@ -1376,12 +1889,26 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-26：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT ELM_DESC, COUNT(ELM_DESC) COUNT_PONO"
+						// " FROM TFOSMT05A"
+						// " WHERE FACTORY_DIV = 'A20'"
+						// " AND DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) || '01'"
+						// " AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " GROUP BY ELM_DESC"
+						// " ORDER BY ELM_DESC"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT ELM_DESC, COUNT(ELM_DESC) COUNT_PONO"
 						" FROM TFOSMT05A"
 						" WHERE FACTORY_DIV = 'A20'"
-						" AND DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) || '01'"
-						" AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" AND DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,6) || '01'"
+						" AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" GROUP BY ELM_DESC"
 						" ORDER BY ELM_DESC"
 						;
@@ -1406,11 +1933,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-27：取查询日期前推4日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
+							// " FROM TFOSMT05B"
+							// " WHERE FACTORY_DIV = 'A10'"
+							// " AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+							// " AND DATE_TIME <= @DATE_TIME"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
 							" FROM TFOSMT05B"
 							" WHERE FACTORY_DIV = 'A10'"
-							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4,'YYYYMMDD')"
 							" AND DATE_TIME <= @DATE_TIME"
 							;
 						break;
@@ -1425,11 +1964,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-28：取查询日期前推2日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
+							// " FROM TFOSMT05B"
+							// " WHERE FACTORY_DIV = 'A10'"
+							// " AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " AND DATE_TIME <= @DATE_TIME"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
 							" FROM TFOSMT05B"
 							" WHERE FACTORY_DIV = 'A10'"
-							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
 							" AND DATE_TIME <= @DATE_TIME"
 							;
 						break;
@@ -1454,11 +2005,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-29：取查询日期前推4日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
+							// " FROM TFOSMT05B"
+							// " WHERE FACTORY_DIV = 'A20'"
+							// " AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+							// " AND DATE_TIME <= @DATE_TIME"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
 							" FROM TFOSMT05B"
 							" WHERE FACTORY_DIV = 'A20'"
-							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4,'YYYYMMDD')"
 							" AND DATE_TIME <= @DATE_TIME"
 							;
 						break;
@@ -1473,11 +2036,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-30：取查询日期前推2日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
+							// " FROM TFOSMT05B"
+							// " WHERE FACTORY_DIV = 'A20'"
+							// " AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " AND DATE_TIME <= @DATE_TIME"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT DATE_TIME, SHIFT_GROUP, HEAT_NO, OLD_ST_NO, ST_NO, REMARK"
 							" FROM TFOSMT05B"
 							" WHERE FACTORY_DIV = 'A20'"
-							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
 							" AND DATE_TIME <= @DATE_TIME"
 							;
 						break;
@@ -1499,12 +2074,82 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-31：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T AS ( SELECT DATE_TIME, SHIFT_GROUP, CC_MACH_NO, PRODUCT_CHARGE, QUALIFIED_CHARGE,"
+						// " 100 * CAST(ROUND(DECODE(PRODUCT_CHARGE,0,0,CAST(QUALIFIED_CHARGE AS DECIMAL)/CAST(PRODUCT_CHARGE AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, REMARK"
+						// " FROM TFOSMT05C"
+						// " WHERE FACTORY_DIV = 'A20'"
+						// " AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') )"
+						// " SELECT * FROM ("
+						// " SELECT *"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'A'"
+						// " UNION ALL"
+						// " SELECT DATE_TIME, SHIFT_GROUP, '合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'A'"
+						// " GROUP BY DATE_TIME, SHIFT_GROUP"
+						// " "
+						// " UNION ALL"
+						// " SELECT *"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'B'"
+						// " UNION ALL"
+						// " SELECT DATE_TIME, SHIFT_GROUP, '合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'B'"
+						// " GROUP BY DATE_TIME, SHIFT_GROUP"
+						// " "
+						// " UNION ALL"
+						// " SELECT *"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'C'"
+						// " UNION ALL"
+						// " SELECT DATE_TIME, SHIFT_GROUP, '合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'C'"
+						// " GROUP BY DATE_TIME, SHIFT_GROUP"
+						// " "
+						// " UNION ALL"
+						// " SELECT *"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'D'"
+						// " UNION ALL"
+						// " SELECT DATE_TIME, SHIFT_GROUP, '合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
+						// " FROM T"
+						// " WHERE SHIFT_GROUP = 'D'"
+						// " GROUP BY DATE_TIME, SHIFT_GROUP"
+						// " "
+						// " UNION ALL"
+						// " SELECT TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') DATE_TIME, '当日合计' SHIFT_GROUP, '当日合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
+						// " FROM T"
+						// " "
+						// " UNION ALL"
+						// " SELECT TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') DATE_TIME, '月度累计' SHIFT_GROUP, '月度累计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
+						// " FROM TFOSMT05C"
+						// " WHERE FACTORY_DIV = 'A20'"
+						// " AND SUBSTR(DATE_TIME, 1, 6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'), 1, 6)"
+						// " "
+						// " )"
+						// " ORDER BY SHIFT_GROUP, CC_MACH_NO"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T AS ( SELECT DATE_TIME, SHIFT_GROUP, CC_MACH_NO, PRODUCT_CHARGE, QUALIFIED_CHARGE,"
 						" 100 * CAST(ROUND(DECODE(PRODUCT_CHARGE,0,0,CAST(QUALIFIED_CHARGE AS DECIMAL)/CAST(PRODUCT_CHARGE AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, REMARK"
 						" FROM TFOSMT05C"
 						" WHERE FACTORY_DIV = 'A20'"
-						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') )"
+						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') )"
 						" SELECT * FROM ("
 						" SELECT *"
 						" FROM T"
@@ -1550,16 +2195,16 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" GROUP BY DATE_TIME, SHIFT_GROUP"
 						" "
 						" UNION ALL"
-						" SELECT TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') DATE_TIME, '当日合计' SHIFT_GROUP, '当日合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						" SELECT TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') DATE_TIME, '当日合计' SHIFT_GROUP, '当日合计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
 						" 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
 						" FROM T"
 						" "
 						" UNION ALL"
-						" SELECT TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD') DATE_TIME, '月度累计' SHIFT_GROUP, '月度累计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						" SELECT TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD') DATE_TIME, '月度累计' SHIFT_GROUP, '月度累计' CC_MACH_NO, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
 						" 100 * CAST(ROUND(DECODE(SUM(PRODUCT_CHARGE),0,0,CAST(SUM(QUALIFIED_CHARGE) AS DECIMAL)/CAST(SUM(PRODUCT_CHARGE) AS DECIMAL)), 4) AS DECIMAL(5,4)) QUALIFIED_RATE, ' ' REMARK"
 						" FROM TFOSMT05C"
 						" WHERE FACTORY_DIV = 'A20'"
-						" AND SUBSTR(DATE_TIME, 1, 6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'), 1, 6)"
+						" AND SUBSTR(DATE_TIME, 1, 6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'), 1, 6)"
 						" "
 						" )"
 						" ORDER BY SHIFT_GROUP, CC_MACH_NO"
@@ -1582,6 +2227,23 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-32：取查询日期前推7日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT A.DATE_TIME,"
+						// " DECODE(SUM(A.PRODUCT_CHARGE),0,0,ROUND(100.00 * SUM(A.QUALIFIED_CHARGE) / SUM(A.PRODUCT_CHARGE), 2)) QUALIFIED_RATE_1,"
+						// " DECODE(SUM(B.PRODUCT_CHARGE),0,0,ROUND(100.00 * SUM(B.QUALIFIED_CHARGE) / SUM(B.PRODUCT_CHARGE), 2)) QUALIFIED_RATE_2"
+						// " FROM TFOSMT05C A"
+						// " LEFT JOIN TFOSMT05C B ON A.DATE_TIME = B.DATE_TIME AND B.CC_MACH_NO = '4' AND B.FACTORY_DIV = 'A20'"
+						// " WHERE A.FACTORY_DIV = 'A20'"
+						// " AND A.CC_MACH_NO = '3'"
+						// " AND A.DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY,'YYYYMMDD')"
+						// " AND A.DATE_TIME <= @DATE_TIME"
+						// " GROUP BY A.DATE_TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT A.DATE_TIME,"
 						" DECODE(SUM(A.PRODUCT_CHARGE),0,0,ROUND(100.00 * SUM(A.QUALIFIED_CHARGE) / SUM(A.PRODUCT_CHARGE), 2)) QUALIFIED_RATE_1,"
@@ -1590,7 +2252,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" LEFT JOIN TFOSMT05C B ON A.DATE_TIME = B.DATE_TIME AND B.CC_MACH_NO = '4' AND B.FACTORY_DIV = 'A20'"
 						" WHERE A.FACTORY_DIV = 'A20'"
 						" AND A.CC_MACH_NO = '3'"
-						" AND A.DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY,'YYYYMMDD')"
+						" AND A.DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7,'YYYYMMDD')"
 						" AND A.DATE_TIME <= @DATE_TIME"
 						" GROUP BY A.DATE_TIME"
 						;
@@ -1612,12 +2274,26 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-33：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT SHIFT_GROUP, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
+						// " DECODE(SUM(PRODUCT_CHARGE),0,0,ROUND(100.00 * SUM(QUALIFIED_CHARGE) / SUM(PRODUCT_CHARGE), 2)) QUALIFIED_RATE"
+						// " FROM TFOSMT05C"
+						// " WHERE FACTORY_DIV = 'A20'"
+						// " AND SUBSTR(DATE_TIME, 1, 6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'), 1, 6)"
+						// " GROUP BY SHIFT_GROUP"
+						// " ORDER BY SHIFT_GROUP"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT SHIFT_GROUP, SUM(PRODUCT_CHARGE), SUM(QUALIFIED_CHARGE),"
 						" DECODE(SUM(PRODUCT_CHARGE),0,0,ROUND(100.00 * SUM(QUALIFIED_CHARGE) / SUM(PRODUCT_CHARGE), 2)) QUALIFIED_RATE"
 						" FROM TFOSMT05C"
 						" WHERE FACTORY_DIV = 'A20'"
-						" AND SUBSTR(DATE_TIME, 1, 6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'), 1, 6)"
+						" AND SUBSTR(DATE_TIME, 1, 6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'), 1, 6)"
 						" GROUP BY SHIFT_GROUP"
 						" ORDER BY SHIFT_GROUP"
 						;
@@ -1642,11 +2318,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-34：取查询日期前推4日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT *"
+							// " FROM TFOSMT05D"
+							// " WHERE 1 = 1"
+							// " AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+							// " AND DATE_TIME <= @DATE_TIME"
+							// " ORDER BY DATE_TIME, FACTORY_DIV, PONO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT *"
 							" FROM TFOSMT05D"
 							" WHERE 1 = 1"
-							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4,'YYYYMMDD')"
 							" AND DATE_TIME <= @DATE_TIME"
 							" ORDER BY DATE_TIME, FACTORY_DIV, PONO"
 							;
@@ -1662,11 +2351,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 					case DB_KIND_MSSQL:				// MS SQL Server数据库
 					case DB_KIND_ORACLE:	        // Oracle 数据库
 					default:
+// DM8 适配 CHANGE-35：取查询日期前推2日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+						// sqlstr =
+							// " SELECT *"
+							// " FROM TFOSMT05D"
+							// " WHERE 1 = 1"
+							// " AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							// " AND DATE_TIME <= @DATE_TIME"
+							// " ORDER BY DATE_TIME, FACTORY_DIV, PONO"
+							// ;
+// DM8 SQL：
 						sqlstr =
 							" SELECT *"
 							" FROM TFOSMT05D"
 							" WHERE 1 = 1"
-							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+							" AND DATE_TIME > TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
 							" AND DATE_TIME <= @DATE_TIME"
 							" ORDER BY DATE_TIME, FACTORY_DIV, PONO"
 							;
@@ -1689,6 +2391,36 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-36：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T AS ("
+						// " SELECT A.FACTORY_DIV, A.ITEM_ENAME, A.ITEM_CNAME, A.REMARK RATE_TARGET,"
+						// " TO_CHAR(ROW_NUMBER() OVER (PARTITION BY FACTORY_DIV ORDER BY SEQ_NO)) DEP_NAME, A.SEQ_NO"
+						// " FROM TFOSMT96B A"
+						// " WHERE A.TABLE_NAME = 'FOSMT06-1'"
+						// " AND A.DATE_TIME = SUBSTR(@DATE_TIME,1,4)"
+						// " ORDER BY A.SEQ_NO),"
+						// " S AS ("
+						// " SELECT FACTORY_DIV, DEP_NAME, SUM(SLAB_WT_1) SLAB_WT_1, SUM(SLAB_WT_2) SLAB_WT_2"
+						// " FROM TFOSMT06A"
+						// " WHERE DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) || '01'"
+						// " AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " GROUP BY FACTORY_DIV, DEP_NAME)"
+						// " SELECT T.*,"
+						// " B1.RATE RATE_1,B2.RATE RATE_2,B3.RATE RATE_3,B4.RATE RATE_4,B5.RATE RATE_5, B5.LACK_RATE RATE_AVG"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT06A B1 ON T.FACTORY_DIV = B1.FACTORY_DIV AND T.DEP_NAME = B1.DEP_NAME AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5 DAY,'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT06A B2 ON T.FACTORY_DIV = B2.FACTORY_DIV AND T.DEP_NAME = B2.DEP_NAME AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT06A B3 ON T.FACTORY_DIV = B3.FACTORY_DIV AND T.DEP_NAME = B3.DEP_NAME AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT06A B4 ON T.FACTORY_DIV = B4.FACTORY_DIV AND T.DEP_NAME = B4.DEP_NAME AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT06A B5 ON T.FACTORY_DIV = B5.FACTORY_DIV AND T.DEP_NAME = B5.DEP_NAME AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD')"
+						// " LEFT JOIN S ON T.FACTORY_DIV = S.FACTORY_DIV AND B1.DEP_NAME = S.DEP_NAME"
+						// " ORDER BY T.SEQ_NO"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T AS ("
 						" SELECT A.FACTORY_DIV, A.ITEM_ENAME, A.ITEM_CNAME, A.REMARK RATE_TARGET,"
@@ -1700,17 +2432,17 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" S AS ("
 						" SELECT FACTORY_DIV, DEP_NAME, SUM(SLAB_WT_1) SLAB_WT_1, SUM(SLAB_WT_2) SLAB_WT_2"
 						" FROM TFOSMT06A"
-						" WHERE DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) || '01'"
-						" AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" WHERE DATE_TIME >= SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,6) || '01'"
+						" AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" GROUP BY FACTORY_DIV, DEP_NAME)"
 						" SELECT T.*,"
 						" B1.RATE RATE_1,B2.RATE RATE_2,B3.RATE RATE_3,B4.RATE RATE_4,B5.RATE RATE_5, B5.LACK_RATE RATE_AVG"
 						" FROM T"
-						" LEFT JOIN TFOSMT06A B1 ON T.FACTORY_DIV = B1.FACTORY_DIV AND T.DEP_NAME = B1.DEP_NAME AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5 DAY,'YYYYMMDD')"
-						" LEFT JOIN TFOSMT06A B2 ON T.FACTORY_DIV = B2.FACTORY_DIV AND T.DEP_NAME = B2.DEP_NAME AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY,'YYYYMMDD')"
-						" LEFT JOIN TFOSMT06A B3 ON T.FACTORY_DIV = B3.FACTORY_DIV AND T.DEP_NAME = B3.DEP_NAME AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY,'YYYYMMDD')"
-						" LEFT JOIN TFOSMT06A B4 ON T.FACTORY_DIV = B4.FACTORY_DIV AND T.DEP_NAME = B4.DEP_NAME AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY,'YYYYMMDD')"
-						" LEFT JOIN TFOSMT06A B5 ON T.FACTORY_DIV = B5.FACTORY_DIV AND T.DEP_NAME = B5.DEP_NAME AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT06A B1 ON T.FACTORY_DIV = B1.FACTORY_DIV AND T.DEP_NAME = B1.DEP_NAME AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT06A B2 ON T.FACTORY_DIV = B2.FACTORY_DIV AND T.DEP_NAME = B2.DEP_NAME AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT06A B3 ON T.FACTORY_DIV = B3.FACTORY_DIV AND T.DEP_NAME = B3.DEP_NAME AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT06A B4 ON T.FACTORY_DIV = B4.FACTORY_DIV AND T.DEP_NAME = B4.DEP_NAME AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT06A B5 ON T.FACTORY_DIV = B5.FACTORY_DIV AND T.DEP_NAME = B5.DEP_NAME AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" LEFT JOIN S ON T.FACTORY_DIV = S.FACTORY_DIV AND B1.DEP_NAME = S.DEP_NAME"
 						" ORDER BY T.SEQ_NO"
 						;
@@ -1732,19 +2464,73 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-37：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY),"
+						// " C AS ("
+						// " SELECT MAT_CODE, DEVO_WT DEVO_WT"
+						// " FROM TFOSMT07A"
+						// " WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01' AND DATE_TIME < @DATE_TIME"
+						// " )"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " COALESCE(B1.DEVO_WT,0) DEVO_WT_1, COALESCE(B2.DEVO_WT,0) DEVO_WT_2, COALESCE(B3.DEVO_WT,0) DEVO_WT_3,"
+						// " COALESCE(B1.DEVO_WT,0) + COALESCE(B2.DEVO_WT,0) + COALESCE(B3.DEVO_WT,0) DEVO_WT_4,"
+						// " COALESCE(B4.DEVO_WT,0) DEVO_WT_5, COALESCE(B5.DEVO_WT,0) DEVO_WT_6,"
+						// " COALESCE(B8.DEVO_WT,0) DEVO_WT_7, COALESCE(B9.DEVO_WT,0) DEVO_WT_8,"
+						// " COALESCE(B4.DEVO_WT,0) + COALESCE(B5.DEVO_WT,0) + COALESCE(B8.DEVO_WT,0) + COALESCE(B9.DEVO_WT,0) DEVO_WT_9,"
+						// " COALESCE(B6.DEVO_WT,0) DEVO_WT_10, COALESCE(B7.DEVO_WT,0) DEVO_WT_11,"
+						// " COALESCE(B6.DEVO_WT,0) + COALESCE(B7.DEVO_WT,0) DEVO_WT_12"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT07A B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.MAT_CODE = '01'"
+						// " LEFT JOIN TFOSMT07A B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.MAT_CODE = '02'"
+						// " LEFT JOIN TFOSMT07A B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.MAT_CODE = '03'"
+						// " LEFT JOIN TFOSMT07A B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.MAT_CODE = '05'"
+						// " LEFT JOIN TFOSMT07A B5 ON TO_CHAR(A.TIME,'YYYYMMDD') = B5.DATE_TIME AND B5.MAT_CODE = '06'"
+						// " LEFT JOIN TFOSMT07A B6 ON TO_CHAR(A.TIME,'YYYYMMDD') = B6.DATE_TIME AND B6.MAT_CODE = '08'"
+						// " LEFT JOIN TFOSMT07A B7 ON TO_CHAR(A.TIME,'YYYYMMDD') = B7.DATE_TIME AND B7.MAT_CODE = '09'"
+						// " LEFT JOIN TFOSMT07A B8 ON TO_CHAR(A.TIME,'YYYYMMDD') = B8.DATE_TIME AND B8.MAT_CODE = '25'"
+						// " LEFT JOIN TFOSMT07A B9 ON TO_CHAR(A.TIME,'YYYYMMDD') = B9.DATE_TIME AND B9.MAT_CODE = '26'"
+						// " UNION ALL"
+						// " SELECT '合计',"
+						// " SUM(CASE WHEN C.MAT_CODE = '01' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '02' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '03' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('01','02','03') THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '05' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '06' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '25' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '26' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('05','06','25','26') THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '08' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '09' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('08','09') THEN C.DEVO_WT ELSE 0 END)"
+						// " FROM C"
+						// " ORDER BY DATE_TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY),"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),"
 						" C AS ("
 						" SELECT MAT_CODE, DEVO_WT DEVO_WT"
 						" FROM TFOSMT07A"
-						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01' AND DATE_TIME < @DATE_TIME"
+						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01' AND DATE_TIME < @DATE_TIME"
 						" )"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" COALESCE(B1.DEVO_WT,0) DEVO_WT_1, COALESCE(B2.DEVO_WT,0) DEVO_WT_2, COALESCE(B3.DEVO_WT,0) DEVO_WT_3,"
@@ -1796,6 +2582,29 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-38：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT '去年月均实绩' DATE_TIME,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-101' THEN TO_NUMBER(REMARK) END) DEVO_WT_1,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-102' THEN TO_NUMBER(REMARK) END) DEVO_WT_2,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-103' THEN TO_NUMBER(REMARK) END) DEVO_WT_3,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-101','FOSMT07-102','FOSMT07-103') THEN TO_NUMBER(REMARK) END) DEVO_WT_4,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-104' THEN TO_NUMBER(REMARK) END) DEVO_WT_5,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-105' THEN TO_NUMBER(REMARK) END) DEVO_WT_6,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-106' THEN TO_NUMBER(REMARK) END) DEVO_WT_7,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-107' THEN TO_NUMBER(REMARK) END) DEVO_WT_8,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-104','FOSMT07-105','FOSMT07-106','FOSMT07-107') THEN TO_NUMBER(REMARK) END) DEVO_WT_9,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-108' THEN TO_NUMBER(REMARK) END) DEVO_WT_10,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-109' THEN TO_NUMBER(REMARK) END) DEVO_WT_11,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-108','FOSMT07-109') THEN TO_NUMBER(REMARK) END) DEVO_WT_12"
+						// " FROM TFOSMT96B"
+						// " WHERE DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,4) AND TABLE_NAME = 'FOSMT07-1'"
+						// " GROUP BY DATE_TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT '去年月均实绩' DATE_TIME,"
 						" MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-101' THEN TO_NUMBER(REMARK) END) DEVO_WT_1,"
@@ -1811,7 +2620,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-109' THEN TO_NUMBER(REMARK) END) DEVO_WT_11,"
 						" SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-108','FOSMT07-109') THEN TO_NUMBER(REMARK) END) DEVO_WT_12"
 						" FROM TFOSMT96B"
-						" WHERE DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,4) AND TABLE_NAME = 'FOSMT07-1'"
+						" WHERE DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,4) AND TABLE_NAME = 'FOSMT07-1'"
 						" GROUP BY DATE_TIME"
 						;
 					break;
@@ -1836,19 +2645,77 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-39：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY),"
+						// " C AS ("
+						// " SELECT MAT_CODE, DEVO_WT DEVO_WT"
+						// " FROM TFOSMT07A"
+						// " WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01' AND DATE_TIME < @DATE_TIME"
+						// " )"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " COALESCE(B1.DEVO_WT,0) DEVO_WT_1, COALESCE(B2.DEVO_WT,0) DEVO_WT_2, COALESCE(B3.DEVO_WT,0) DEVO_WT_3,"
+						// " COALESCE(B1.DEVO_WT,0) + COALESCE(B2.DEVO_WT,0) + COALESCE(B3.DEVO_WT,0) DEVO_WT_4,"
+						// " COALESCE(B4.DEVO_WT,0) DEVO_WT_5, COALESCE(B5.DEVO_WT,0) DEVO_WT_6,COALESCE(B6.DEVO_WT,0) DEVO_WT_7,"
+						// " COALESCE(B4.DEVO_WT,0) + COALESCE(B5.DEVO_WT,0) + COALESCE(B6.DEVO_WT,0) DEVO_WT_8,"
+						// " COALESCE(B7.DEVO_WT,0) DEVO_WT_9, COALESCE(B8.DEVO_WT,0) DEVO_WT_10,"
+						// " COALESCE(B7.DEVO_WT,0) + COALESCE(B8.DEVO_WT,0) DEVO_WT_11,"
+						// " COALESCE(B9.DEVO_WT,0) DEVO_WT_12, COALESCE(BA.DEVO_WT,0) DEVO_WT_13,"
+						// " COALESCE(B9.DEVO_WT,0) + COALESCE(BA.DEVO_WT,0) DEVO_WT_14"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT07A B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.MAT_CODE = '11'"
+						// " LEFT JOIN TFOSMT07A B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.MAT_CODE = '12'"
+						// " LEFT JOIN TFOSMT07A B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.MAT_CODE = '13'"
+						// " LEFT JOIN TFOSMT07A B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.MAT_CODE = '15'"
+						// " LEFT JOIN TFOSMT07A B5 ON TO_CHAR(A.TIME,'YYYYMMDD') = B5.DATE_TIME AND B5.MAT_CODE = '16'"
+						// " LEFT JOIN TFOSMT07A B6 ON TO_CHAR(A.TIME,'YYYYMMDD') = B6.DATE_TIME AND B6.MAT_CODE = '17'"
+						// " LEFT JOIN TFOSMT07A B7 ON TO_CHAR(A.TIME,'YYYYMMDD') = B7.DATE_TIME AND B7.MAT_CODE = '19'"
+						// " LEFT JOIN TFOSMT07A B8 ON TO_CHAR(A.TIME,'YYYYMMDD') = B8.DATE_TIME AND B8.MAT_CODE = '20'"
+						// " LEFT JOIN TFOSMT07A B9 ON TO_CHAR(A.TIME,'YYYYMMDD') = B9.DATE_TIME AND B9.MAT_CODE = '22'"
+						// " LEFT JOIN TFOSMT07A BA ON TO_CHAR(A.TIME,'YYYYMMDD') = BA.DATE_TIME AND BA.MAT_CODE = '23'"
+						// " UNION ALL"
+						// " SELECT '合计',"
+						// " SUM(CASE WHEN C.MAT_CODE = '11' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '12' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '13' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('11','12','13') THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '15' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '16' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '17' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('15','16','17') THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '19' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '20' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('19','20') THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '22' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE = '23' THEN C.DEVO_WT ELSE 0 END),"
+						// " SUM(CASE WHEN C.MAT_CODE IN ('22','23') THEN C.DEVO_WT ELSE 0 END)"
+						// " FROM C"
+						// " ORDER BY DATE_TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY),"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),"
 						" C AS ("
 						" SELECT MAT_CODE, DEVO_WT DEVO_WT"
 						" FROM TFOSMT07A"
-						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01' AND DATE_TIME < @DATE_TIME"
+						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01' AND DATE_TIME < @DATE_TIME"
 						" )"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" COALESCE(B1.DEVO_WT,0) DEVO_WT_1, COALESCE(B2.DEVO_WT,0) DEVO_WT_2, COALESCE(B3.DEVO_WT,0) DEVO_WT_3,"
@@ -1904,6 +2771,31 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-40：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT '去年月均实绩' DATE_TIME,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-110' THEN TO_NUMBER(REMARK) END) DEVO_WT_1,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-111' THEN TO_NUMBER(REMARK) END) DEVO_WT_2,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-112' THEN TO_NUMBER(REMARK) END) DEVO_WT_3,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-110','FOSMT07-111','FOSMT07-112') THEN TO_NUMBER(REMARK) END) DEVO_WT_4,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-113' THEN TO_NUMBER(REMARK) END) DEVO_WT_5,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-114' THEN TO_NUMBER(REMARK) END) DEVO_WT_6,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-115' THEN TO_NUMBER(REMARK) END) DEVO_WT_7,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-113','FOSMT07-114','FOSMT07-115') THEN TO_NUMBER(REMARK) END) DEVO_WT_8,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-116' THEN TO_NUMBER(REMARK) END) DEVO_WT_9,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-117' THEN TO_NUMBER(REMARK) END) DEVO_WT_10,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-116','FOSMT07-117') THEN TO_NUMBER(REMARK) END) DEVO_WT_11,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-118' THEN TO_NUMBER(REMARK) END) DEVO_WT_12,"
+						// " MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-119' THEN TO_NUMBER(REMARK) END) DEVO_WT_13,"
+						// " SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-118','FOSMT07-119') THEN TO_NUMBER(REMARK) END) DEVO_WT_14"
+						// " FROM TFOSMT96B"
+						// " WHERE DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,4) AND TABLE_NAME = 'FOSMT07-1'"
+						// " GROUP BY DATE_TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT '去年月均实绩' DATE_TIME,"
 						" MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-110' THEN TO_NUMBER(REMARK) END) DEVO_WT_1,"
@@ -1921,7 +2813,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" MAX(CASE WHEN ITEM_ENAME = 'FOSMT07-119' THEN TO_NUMBER(REMARK) END) DEVO_WT_13,"
 						" SUM(CASE WHEN ITEM_ENAME IN ('FOSMT07-118','FOSMT07-119') THEN TO_NUMBER(REMARK) END) DEVO_WT_14"
 						" FROM TFOSMT96B"
-						" WHERE DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,4) AND TABLE_NAME = 'FOSMT07-1'"
+						" WHERE DATE_TIME = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,4) AND TABLE_NAME = 'FOSMT07-1'"
 						" GROUP BY DATE_TIME"
 						;
 					break;
@@ -1946,16 +2838,55 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-41：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T AS ("
+						// " SELECT ITEM_CNAME, UNIT, PROC_DIV, SEQ_NO, ITEM_ENAME,"
+						// " SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'), 1, 4) DATE_TIME"
+						// " FROM TFOSMT96A"
+						// " WHERE TABLE_NAME = 'FOSMT08-1' AND FACTORY_DIV = 'A10' AND PROC_DIV = 'Y'"
+						// " ), S AS ("
+						// " SELECT ITEM_ENAME, SUM(REMARK_1) REMARK_1, SUM(REMARK_2) REMARK_2"
+						// " FROM TFOSMT08A"
+						// " WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM') || '01' AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " GROUP BY ITEM_ENAME"
+						// " )"
+						// " SELECT ROW_NUMBER() OVER () SEQ_NO, T.ITEM_CNAME, T.UNIT, T.PROC_DIV, T.DATE_TIME,"
+						// " TO_NUMBER(COALESCE(A.REMARK,0)) INDEX_TARGET_1, TO_NUMBER(COALESCE(B.REMARK,0)) INDEX_TARGET_2,"
+						// " TO_NUMBER(COALESCE(C.INDEX_DAY,0)) INDEX_DAY_1,"
+						// " CASE WHEN T.ITEM_ENAME = 'FOSMT08-127' THEN C2.REMARK_1"
+						// " ELSE DECODE(C2.REMARK_2,0,0,C2.REMARK_1 / C2.REMARK_2)"
+						// " END INDEX_TOL_1,"
+						// " TO_NUMBER(COALESCE(D.INDEX_DAY,0)) INDEX_DAY_2,"
+						// " CASE WHEN T.ITEM_ENAME = 'FOSMT08-127' THEN D2.REMARK_1"
+						// " ELSE DECODE(D2.REMARK_2,0,0,D2.REMARK_1 / D2.REMARK_2)"
+						// " END INDEX_TOL_2,"
+						// " CASE WHEN T.ITEM_ENAME = 'FOSMT08-127' THEN C2.REMARK_1 + D2.REMARK_1"
+						// " ELSE DECODE((C2.REMARK_2 + D2.REMARK_2),0,0,(C2.REMARK_1 + D2.REMARK_1) / (C2.REMARK_2 + D2.REMARK_2))"
+						// " END INDEX_TOL"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT96B A ON T.ITEM_CNAME = A.ITEM_CNAME AND A.FACTORY_DIV = 'A10' AND T.DATE_TIME = A.DATE_TIME"
+						// " LEFT JOIN TFOSMT96B B ON T.ITEM_CNAME = B.ITEM_CNAME AND B.FACTORY_DIV = 'A20' AND T.DATE_TIME = B.DATE_TIME"
+						// " LEFT JOIN TFOSMT08A C ON A.ITEM_ENAME = C.ITEM_ENAME AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " LEFT JOIN S C2 ON A.ITEM_ENAME = C2.ITEM_ENAME"
+						// " LEFT JOIN TFOSMT08A D ON B.ITEM_ENAME = D.ITEM_ENAME AND D.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " LEFT JOIN S D2 ON B.ITEM_ENAME = D2.ITEM_ENAME"
+						// " ORDER BY T.SEQ_NO, T.ITEM_ENAME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T AS ("
 						" SELECT ITEM_CNAME, UNIT, PROC_DIV, SEQ_NO, ITEM_ENAME,"
-						" SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'), 1, 4) DATE_TIME"
+						" SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'), 1, 4) DATE_TIME"
 						" FROM TFOSMT96A"
 						" WHERE TABLE_NAME = 'FOSMT08-1' AND FACTORY_DIV = 'A10' AND PROC_DIV = 'Y'"
 						" ), S AS ("
 						" SELECT ITEM_ENAME, SUM(REMARK_1) REMARK_1, SUM(REMARK_2) REMARK_2"
 						" FROM TFOSMT08A"
-						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM') || '01' AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01' AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" GROUP BY ITEM_ENAME"
 						" )"
 						" SELECT ROW_NUMBER() OVER () SEQ_NO, T.ITEM_CNAME, T.UNIT, T.PROC_DIV, T.DATE_TIME,"
@@ -1974,9 +2905,9 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" FROM T"
 						" LEFT JOIN TFOSMT96B A ON T.ITEM_CNAME = A.ITEM_CNAME AND A.FACTORY_DIV = 'A10' AND T.DATE_TIME = A.DATE_TIME"
 						" LEFT JOIN TFOSMT96B B ON T.ITEM_CNAME = B.ITEM_CNAME AND B.FACTORY_DIV = 'A20' AND T.DATE_TIME = B.DATE_TIME"
-						" LEFT JOIN TFOSMT08A C ON A.ITEM_ENAME = C.ITEM_ENAME AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT08A C ON A.ITEM_ENAME = C.ITEM_ENAME AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" LEFT JOIN S C2 ON A.ITEM_ENAME = C2.ITEM_ENAME"
-						" LEFT JOIN TFOSMT08A D ON B.ITEM_ENAME = D.ITEM_ENAME AND D.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" LEFT JOIN TFOSMT08A D ON B.ITEM_ENAME = D.ITEM_ENAME AND D.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" LEFT JOIN S D2 ON B.ITEM_ENAME = D2.ITEM_ENAME"
 						" ORDER BY T.SEQ_NO, T.ITEM_ENAME"
 						;
@@ -1998,6 +2929,38 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-42：日期按天前推过滤;过滤边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT A.ITEM_ENAME ENERGY_CODE, SUBSTR(A.ITEM_CNAME,1,LENGTH(A.ITEM_CNAME)-8) ENERGY_CNAME,"
+						// " B0.REMARK PRICE, A.UNIT, B1.REMARK VALUE_REAL, B2.REMARK VALUE_TARGET,"
+						// " COALESCE(TO_NUMBER(C1.REMARK),0) VALUE_DAY_1, COALESCE(TO_NUMBER(C2.REMARK),0) VALUE_DAY_2,"
+						// " COALESCE(TO_NUMBER(C3.REMARK),0) VALUE_DAY_3,"
+						// " CASE WHEN A.ITEM_ENAME IN ('FOSMT09-103','FOSMT09-105','FOSMT09-123')"
+						// " THEN ROUND(COALESCE(DECODE(D.REMARK_2,0,0,D.REMARK_1 / D.REMARK_2),0),0)"
+						// " WHEN A.ITEM_ENAME IN ('FOSMT09-131', 'FOSMT09-133')"
+						// " THEN ROUND(D.REMARK, 0)"
+						// " ELSE ROUND(COALESCE(DECODE(D.REMARK_2,0,0,D.REMARK_1 / D.REMARK_2),0),2)"
+						// " END VALUE_MONTH"
+						// " FROM TFOSMT96A A"
+						// " LEFT JOIN TFOSMT09C B0 ON A.ITEM_ENAME = B0.ITEM_ENAME"
+						// " LEFT JOIN TFOSMT96B B1 ON SUBSTR(A.ITEM_CNAME,1,LENGTH(A.ITEM_CNAME)-8) = SUBSTR(B1.ITEM_CNAME,1,LENGTH(B1.ITEM_CNAME)-8)"
+						// " AND MOD(SUBSTR(B1.ITEM_ENAME,11,1),2) = 1 AND B1.TABLE_NAME = 'FOSMT09-1' AND B1.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYY')"
+						// " LEFT JOIN TFOSMT96B B2 ON SUBSTR(A.ITEM_CNAME,1,LENGTH(A.ITEM_CNAME)-8) = SUBSTR(B2.ITEM_CNAME,1,LENGTH(B2.ITEM_CNAME)-8)"
+						// " AND MOD(SUBSTR(B2.ITEM_ENAME,11,1),2) = 0 AND B2.TABLE_NAME = 'FOSMT09-1' AND B2.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYY')"
+						// " LEFT JOIN TFOSMT09A C1 ON A.ITEM_ENAME = C1.ITEM_ENAME AND C1.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAYS),'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT09A C2 ON A.ITEM_ENAME = C2.ITEM_ENAME AND C2.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAYS),'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT09A C3 ON A.ITEM_ENAME = C3.ITEM_ENAME AND C3.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMMDD')"
+						// " LEFT JOIN (SELECT ITEM_ENAME,AVG(REMARK) AS REMARK, SUM(TO_NUMBER(REMARK_1)) REMARK_1, SUM(TO_NUMBER(REMARK_2)) REMARK_2 FROM TFOSMT09A"
+						// " WHERE SUBSTR(DATE_TIME,1,6) = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMM') GROUP BY ITEM_ENAME) D"
+						// " ON A.ITEM_ENAME = D.ITEM_ENAME"
+						// " WHERE MOD(SUBSTR(A.ITEM_ENAME,11,1),2) = 1"
+						// " AND A.TABLE_NAME = 'FOSMT09-1'"
+						// " ORDER BY A.SEQ_NO"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT A.ITEM_ENAME ENERGY_CODE, SUBSTR(A.ITEM_CNAME,1,LENGTH(A.ITEM_CNAME)-8) ENERGY_CNAME,"
 						" B0.REMARK PRICE, A.UNIT, B1.REMARK VALUE_REAL, B2.REMARK VALUE_TARGET,"
@@ -2012,14 +2975,14 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" FROM TFOSMT96A A"
 						" LEFT JOIN TFOSMT09C B0 ON A.ITEM_ENAME = B0.ITEM_ENAME"
 						" LEFT JOIN TFOSMT96B B1 ON SUBSTR(A.ITEM_CNAME,1,LENGTH(A.ITEM_CNAME)-8) = SUBSTR(B1.ITEM_CNAME,1,LENGTH(B1.ITEM_CNAME)-8)"
-						" AND MOD(SUBSTR(B1.ITEM_ENAME,11,1),2) = 1 AND B1.TABLE_NAME = 'FOSMT09-1' AND B1.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYY')"
+						" AND MOD(SUBSTR(B1.ITEM_ENAME,11,1),2) = 1 AND B1.TABLE_NAME = 'FOSMT09-1' AND B1.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYY')"
 						" LEFT JOIN TFOSMT96B B2 ON SUBSTR(A.ITEM_CNAME,1,LENGTH(A.ITEM_CNAME)-8) = SUBSTR(B2.ITEM_CNAME,1,LENGTH(B2.ITEM_CNAME)-8)"
-						" AND MOD(SUBSTR(B2.ITEM_ENAME,11,1),2) = 0 AND B2.TABLE_NAME = 'FOSMT09-1' AND B2.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYY')"
-						" LEFT JOIN TFOSMT09A C1 ON A.ITEM_ENAME = C1.ITEM_ENAME AND C1.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAYS),'YYYYMMDD')"
-						" LEFT JOIN TFOSMT09A C2 ON A.ITEM_ENAME = C2.ITEM_ENAME AND C2.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAYS),'YYYYMMDD')"
-						" LEFT JOIN TFOSMT09A C3 ON A.ITEM_ENAME = C3.ITEM_ENAME AND C3.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMMDD')"
+						" AND MOD(SUBSTR(B2.ITEM_ENAME,11,1),2) = 0 AND B2.TABLE_NAME = 'FOSMT09-1' AND B2.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYY')"
+						" LEFT JOIN TFOSMT09A C1 ON A.ITEM_ENAME = C1.ITEM_ENAME AND C1.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 3),'YYYYMMDD')"
+						" LEFT JOIN TFOSMT09A C2 ON A.ITEM_ENAME = C2.ITEM_ENAME AND C2.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 2),'YYYYMMDD')"
+						" LEFT JOIN TFOSMT09A C3 ON A.ITEM_ENAME = C3.ITEM_ENAME AND C3.DATE_TIME = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYYMMDD')"
 						" LEFT JOIN (SELECT ITEM_ENAME,AVG(REMARK) AS REMARK, SUM(TO_NUMBER(REMARK_1)) REMARK_1, SUM(TO_NUMBER(REMARK_2)) REMARK_2 FROM TFOSMT09A"
-						" WHERE SUBSTR(DATE_TIME,1,6) = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMM') GROUP BY ITEM_ENAME) D"
+						" WHERE SUBSTR(DATE_TIME,1,6) = TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYYMM') GROUP BY ITEM_ENAME) D"
 						" ON A.ITEM_ENAME = D.ITEM_ENAME"
 						" WHERE MOD(SUBSTR(A.ITEM_ENAME,11,1),2) = 1"
 						" AND A.TABLE_NAME = 'FOSMT09-1'"
@@ -2043,15 +3006,39 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-43：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, T"
+						// " WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(T.TIME,'YYYYMMDD') DATE_TIME,"
+						// " A.IRON_S IRON_S_1, A.IRON_P IRON_P_1, A.IRON_TEMP IRON_TEMP_1, A.MOLTIRON_WT MOLTIRON_WT_1,"
+						// " A.SCRAPE_SLAG_WGT SCRAPE_SLAG_WGT_1, A.RATE RATE_1, A.RATIO_NUM RATIO_NUM_1,"
+						// " B.IRON_S IRON_S_2, B.IRON_P IRON_P_2, B.IRON_TEMP IRON_TEMP_2, B.MOLTIRON_WT MOLTIRON_WT_2,"
+						// " B.SCRAPE_SLAG_WGT SCRAPE_SLAG_WGT_2, B.RATE RATE_2, B.RATIO_NUM RATIO_NUM_2"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT10A A ON TO_CHAR(T.TIME,'YYYYMMDD') = A.DATE_TIME AND A.FACTORY_DIV = 'A10'"
+						// " LEFT JOIN TFOSMT10A B ON TO_CHAR(T.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, T"
-						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, T"
+						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(T.TIME,'YYYYMMDD') DATE_TIME,"
 						" A.IRON_S IRON_S_1, A.IRON_P IRON_P_1, A.IRON_TEMP IRON_TEMP_1, A.MOLTIRON_WT MOLTIRON_WT_1,"
 						" A.SCRAPE_SLAG_WGT SCRAPE_SLAG_WGT_1, A.RATE RATE_1, A.RATIO_NUM RATIO_NUM_1,"
@@ -2077,15 +3064,32 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-44：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT T.DATE_TIME,"
+						// " AVG(A.IRON_S) IRON_S_1, AVG(A.IRON_P) IRON_P_1, AVG(A.IRON_TEMP) IRON_TEMP_1, AVG(A.MOLTIRON_WT) MOLTIRON_WT_1,"
+						// " AVG(A.SCRAPE_SLAG_WGT) SCRAPE_SLAG_WGT_1, AVG(A.RATE) RATE_1, AVG(A.RATIO_NUM) RATIO_NUM_1,"
+						// " AVG(B.IRON_S) IRON_S_2, AVG(B.IRON_P) IRON_P_2, AVG(B.IRON_TEMP) IRON_TEMP_2, AVG(B.MOLTIRON_WT) MOLTIRON_WT_2,"
+						// " AVG(B.SCRAPE_SLAG_WGT) SCRAPE_SLAG_WGT_2, AVG(B.RATE) RATE_2, AVG(B.RATIO_NUM) RATIO_NUM_2"
+						// " FROM (SELECT '合计' DATE_TIME FROM SYSIBM.DUAL) T"
+						// " LEFT JOIN TFOSMT10A A ON SUBSTR(A.DATE_TIME,1,6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) AND A.FACTORY_DIV = 'A10'"
+						// " LEFT JOIN TFOSMT10A B ON SUBSTR(B.DATE_TIME,1,6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) AND B.FACTORY_DIV = 'A20' AND A.DATE_TIME = B.DATE_TIME"
+						// " WHERE 1 = 1"
+						// " GROUP BY T.DATE_TIME"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT T.DATE_TIME,"
 						" AVG(A.IRON_S) IRON_S_1, AVG(A.IRON_P) IRON_P_1, AVG(A.IRON_TEMP) IRON_TEMP_1, AVG(A.MOLTIRON_WT) MOLTIRON_WT_1,"
 						" AVG(A.SCRAPE_SLAG_WGT) SCRAPE_SLAG_WGT_1, AVG(A.RATE) RATE_1, AVG(A.RATIO_NUM) RATIO_NUM_1,"
 						" AVG(B.IRON_S) IRON_S_2, AVG(B.IRON_P) IRON_P_2, AVG(B.IRON_TEMP) IRON_TEMP_2, AVG(B.MOLTIRON_WT) MOLTIRON_WT_2,"
 						" AVG(B.SCRAPE_SLAG_WGT) SCRAPE_SLAG_WGT_2, AVG(B.RATE) RATE_2, AVG(B.RATIO_NUM) RATIO_NUM_2"
-						" FROM (SELECT '合计' DATE_TIME FROM SYSIBM.DUAL) T"
-						" LEFT JOIN TFOSMT10A A ON SUBSTR(A.DATE_TIME,1,6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) AND A.FACTORY_DIV = 'A10'"
-						" LEFT JOIN TFOSMT10A B ON SUBSTR(B.DATE_TIME,1,6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD'),1,6) AND B.FACTORY_DIV = 'A20' AND A.DATE_TIME = B.DATE_TIME"
+						" FROM (SELECT '合计' DATE_TIME FROM DUAL) T"
+						" LEFT JOIN TFOSMT10A A ON SUBSTR(A.DATE_TIME,1,6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,6) AND A.FACTORY_DIV = 'A10'"
+						" LEFT JOIN TFOSMT10A B ON SUBSTR(B.DATE_TIME,1,6) = SUBSTR(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD'),1,6) AND B.FACTORY_DIV = 'A20' AND A.DATE_TIME = B.DATE_TIME"
 						" WHERE 1 = 1"
 						" GROUP BY T.DATE_TIME"
 						;
@@ -2111,11 +3115,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-45：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT SEQ_NO DATE_TIME, A.ELM_CODE, A.ELM_VALUE"
+						// " FROM TFOSMT10I A"
+						// " WHERE FACTORY_DIV = 'A10'"
+						// " AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " AND STATION_NO = '2'"
+						// " ORDER BY SEQ_NO"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT SEQ_NO DATE_TIME, A.ELM_CODE, A.ELM_VALUE"
 						" FROM TFOSMT10I A"
 						" WHERE FACTORY_DIV = 'A10'"
-						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" AND STATION_NO = '2'"
 						" ORDER BY SEQ_NO"
 						;
@@ -2137,11 +3154,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-46：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT SEQ_NO DATE_TIME, A.ELM_CODE, A.ELM_VALUE"
+						// " FROM TFOSMT10I A"
+						// " WHERE FACTORY_DIV = 'A20'"
+						// " AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " AND STATION_NO = '4'"
+						// " ORDER BY SEQ_NO"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT SEQ_NO DATE_TIME, A.ELM_CODE, A.ELM_VALUE"
 						" FROM TFOSMT10I A"
 						" WHERE FACTORY_DIV = 'A20'"
-						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" AND STATION_NO = '4'"
 						" ORDER BY SEQ_NO"
 						;
@@ -2163,11 +3193,24 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-47：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT SEQ_NO DATE_TIME, A.ELM_CODE, A.ELM_VALUE"
+						// " FROM TFOSMT10I A"
+						// " WHERE FACTORY_DIV = 'A20'"
+						// " AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// " AND STATION_NO = '5'"
+						// " ORDER BY SEQ_NO"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT SEQ_NO DATE_TIME, A.ELM_CODE, A.ELM_VALUE"
 						" FROM TFOSMT10I A"
 						" WHERE FACTORY_DIV = 'A20'"
-						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" AND DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						" AND STATION_NO = '5'"
 						" ORDER BY SEQ_NO"
 						;
@@ -2189,15 +3232,42 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-48：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, T"
+						// " WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT A.DATE_TIME, A.RAW_IRON_WT RAW_IRON_WT_1, A.SCRAP_STEEL_IN SCRAP_STEEL_IN_1,"
+						// " A.SCRAP_STEEL_BOF SCRAP_STEEL_BOF_1, A.SCRAP_STEEL_HEAT SCRAP_STEEL_HEAT_1,"
+						// " A.RATE RATE_1, A.SCRAP_STEEL_SR SCRAP_STEEL_SR_1,"
+						// " B.RAW_IRON_WT RAW_IRON_WT_2, B.SCRAP_STEEL_IN SCRAP_STEEL_IN_2,"
+						// " B.SCRAP_STEEL_BOF SCRAP_STEEL_BOF_2, B.SCRAP_STEEL_HEAT SCRAP_STEEL_HEAT_2,"
+						// " B.RATE RATE_2, B.SCRAP_STEEL_SR SCRAP_STEEL_SR_2, B.SCRAP_STEEL_TPD,"
+						// " C.SCRAP_STEEL_TPC, C.RATIO_NUM"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT10B A ON TO_CHAR(T.TIME,'YYYYMMDD') = A.DATE_TIME AND A.FACTORY_DIV = 'A10'"
+						// " LEFT JOIN TFOSMT10B B ON TO_CHAR(T.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " LEFT JOIN TFOSMT10B C ON TO_CHAR(T.TIME,'YYYYMMDD') = C.DATE_TIME AND C.FACTORY_DIV = 'A00'"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, T"
-						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, T"
+						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT A.DATE_TIME, A.RAW_IRON_WT RAW_IRON_WT_1, A.SCRAP_STEEL_IN SCRAP_STEEL_IN_1,"
 						" A.SCRAP_STEEL_BOF SCRAP_STEEL_BOF_1, A.SCRAP_STEEL_HEAT SCRAP_STEEL_HEAT_1,"
 						" A.RATE RATE_1, A.SCRAP_STEEL_SR SCRAP_STEEL_SR_1,"
@@ -2226,15 +3296,42 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-49：生成查询日期之前1天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, T"
+						// " WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT '合计' DATE_TIME, SUM(A.RAW_IRON_WT) RAW_IRON_WT_1, SUM(A.SCRAP_STEEL_IN) SCRAP_STEEL_IN_1,"
+						// " SUM(A.SCRAP_STEEL_BOF) SCRAP_STEEL_BOF_1, SUM(A.SCRAP_STEEL_HEAT) SCRAP_STEEL_HEAT_1,"
+						// " ROUND(AVG(A.RATE),2) RATE_1, SUM(A.SCRAP_STEEL_SR) SCRAP_STEEL_SR_1,"
+						// " SUM(B.RAW_IRON_WT) RAW_IRON_WT_2, SUM(B.SCRAP_STEEL_IN) SCRAP_STEEL_IN_2,"
+						// " SUM(B.SCRAP_STEEL_BOF) SCRAP_STEEL_BOF_2, SUM(B.SCRAP_STEEL_HEAT) SCRAP_STEEL_HEAT_2,"
+						// " ROUND(AVG(B.RATE),2) RATE_2, SUM(B.SCRAP_STEEL_SR) SCRAP_STEEL_SR_2, SUM(B.SCRAP_STEEL_TPD) SCRAP_STEEL_TPD,"
+						// " SUM(C.SCRAP_STEEL_TPC) SCRAP_STEEL_TPC, ROUND(AVG(C.RATIO_NUM),2) RATIO_NUM"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT10B A ON TO_CHAR(T.TIME,'YYYYMMDD') = A.DATE_TIME AND A.FACTORY_DIV = 'A10'"
+						// " LEFT JOIN TFOSMT10B B ON TO_CHAR(T.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " LEFT JOIN TFOSMT10B C ON TO_CHAR(T.TIME,'YYYYMMDD') = C.DATE_TIME AND C.FACTORY_DIV = 'A00'"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01','YYYYMMDD')"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, T"
-						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, T"
+						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT '合计' DATE_TIME, SUM(A.RAW_IRON_WT) RAW_IRON_WT_1, SUM(A.SCRAP_STEEL_IN) SCRAP_STEEL_IN_1,"
 						" SUM(A.SCRAP_STEEL_BOF) SCRAP_STEEL_BOF_1, SUM(A.SCRAP_STEEL_HEAT) SCRAP_STEEL_HEAT_1,"
 						" ROUND(AVG(A.RATE),2) RATE_1, SUM(A.SCRAP_STEEL_SR) SCRAP_STEEL_SR_1,"
@@ -2270,20 +3367,44 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-50：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；二元标量 MAX 改为空值守卫的 GREATEST,空值传播与 DB2 标量 MAX 一致；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, T"
+						// " WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT A.DATE_TIME, A.PRODUCT_CHARGE PRODUCT_CHARGE_1, A.QUALIFIED_CHARGE QUALIFIED_CHARGE_1,"
+						// " DECODE(A.PRODUCT_CHARGE,0,0, ROUND(100.00 * A.QUALIFIED_CHARGE / A.PRODUCT_CHARGE,2)) QUALIFIED_RATE_1, MAX(0,A.ACT_COSTING) ACT_COSTING_1,"
+						// " B.PRODUCT_CHARGE PRODUCT_CHARGE_2, B.QUALIFIED_CHARGE QUALIFIED_CHARGE_2,"
+						// " DECODE(B.PRODUCT_CHARGE,0,0,ROUND(100.00 * B.QUALIFIED_CHARGE / B.PRODUCT_CHARGE,2)) QUALIFIED_RATE_2, MAX(0,B.ACT_COSTING) ACT_COSTING_2,"
+						// " MAX(0,A.ACT_COSTING) + MAX(0,B.ACT_COSTING) ACT_COSTING_TOTAL"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT10C A ON TO_CHAR(T.TIME,'YYYYMMDD') = A.DATE_TIME AND A.FACTORY_DIV = 'A10'"
+						// " LEFT JOIN TFOSMT10C B ON TO_CHAR(T.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, T"
-						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, T"
+						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT A.DATE_TIME, A.PRODUCT_CHARGE PRODUCT_CHARGE_1, A.QUALIFIED_CHARGE QUALIFIED_CHARGE_1,"
-						" DECODE(A.PRODUCT_CHARGE,0,0, ROUND(100.00 * A.QUALIFIED_CHARGE / A.PRODUCT_CHARGE,2)) QUALIFIED_RATE_1, MAX(0,A.ACT_COSTING) ACT_COSTING_1,"
+						" DECODE(A.PRODUCT_CHARGE,0,0, ROUND(100.00 * A.QUALIFIED_CHARGE / A.PRODUCT_CHARGE,2)) QUALIFIED_RATE_1, CASE WHEN 0 IS NULL OR A.ACT_COSTING IS NULL THEN NULL ELSE GREATEST(0, A.ACT_COSTING) END ACT_COSTING_1,"
 						" B.PRODUCT_CHARGE PRODUCT_CHARGE_2, B.QUALIFIED_CHARGE QUALIFIED_CHARGE_2,"
-						" DECODE(B.PRODUCT_CHARGE,0,0,ROUND(100.00 * B.QUALIFIED_CHARGE / B.PRODUCT_CHARGE,2)) QUALIFIED_RATE_2, MAX(0,B.ACT_COSTING) ACT_COSTING_2,"
-						" MAX(0,A.ACT_COSTING) + MAX(0,B.ACT_COSTING) ACT_COSTING_TOTAL"
+						" DECODE(B.PRODUCT_CHARGE,0,0,ROUND(100.00 * B.QUALIFIED_CHARGE / B.PRODUCT_CHARGE,2)) QUALIFIED_RATE_2, CASE WHEN 0 IS NULL OR B.ACT_COSTING IS NULL THEN NULL ELSE GREATEST(0, B.ACT_COSTING) END ACT_COSTING_2,"
+						" CASE WHEN 0 IS NULL OR A.ACT_COSTING IS NULL THEN NULL ELSE GREATEST(0, A.ACT_COSTING) END + CASE WHEN 0 IS NULL OR B.ACT_COSTING IS NULL THEN NULL ELSE GREATEST(0, B.ACT_COSTING) END ACT_COSTING_TOTAL"
 						" FROM T"
 						" LEFT JOIN TFOSMT10C A ON TO_CHAR(T.TIME,'YYYYMMDD') = A.DATE_TIME AND A.FACTORY_DIV = 'A10'"
 						" LEFT JOIN TFOSMT10C B ON TO_CHAR(T.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
@@ -2304,15 +3425,41 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-51：生成查询日期之前1天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, T"
+						// " WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT '合计' DATE_TIME, SUM(A.PRODUCT_CHARGE) PRODUCT_CHARGE_1, SUM(A.QUALIFIED_CHARGE) QUALIFIED_CHARGE_1,"
+						// " ROUND(100.00 * SUM(A.QUALIFIED_CHARGE) / SUM(A.PRODUCT_CHARGE),2) QUALIFIED_RATE_1,"
+						// " CASE WHEN SUM(A.ACT_COSTING) < 0 THEN 0 ELSE SUM(A.ACT_COSTING) END ACT_COSTING_1,"
+						// " SUM(B.PRODUCT_CHARGE) PRODUCT_CHARGE_2, SUM(B.QUALIFIED_CHARGE) QUALIFIED_CHARGE_2,"
+						// " ROUND(100.00 * SUM(B.QUALIFIED_CHARGE) / SUM(B.PRODUCT_CHARGE),2) QUALIFIED_RATE_2,"
+						// " CASE WHEN SUM(B.ACT_COSTING) < 0 THEN 0 ELSE SUM(B.ACT_COSTING) END ACT_COSTING_2,"
+						// " CASE WHEN SUM(A.ACT_COSTING) < 0 THEN 0 ELSE SUM(A.ACT_COSTING) END + CASE WHEN SUM(B.ACT_COSTING) < 0 THEN 0 ELSE SUM(B.ACT_COSTING) END ACT_COSTING_TOTAL"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT10C A ON TO_CHAR(T.TIME,'YYYYMMDD') = A.DATE_TIME AND A.FACTORY_DIV = 'A10'"
+						// " LEFT JOIN TFOSMT10C B ON TO_CHAR(T.TIME,'YYYYMMDD') = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01','YYYYMMDD')"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, T"
-						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, T"
+						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT '合计' DATE_TIME, SUM(A.PRODUCT_CHARGE) PRODUCT_CHARGE_1, SUM(A.QUALIFIED_CHARGE) QUALIFIED_CHARGE_1,"
 						" ROUND(100.00 * SUM(A.QUALIFIED_CHARGE) / SUM(A.PRODUCT_CHARGE),2) QUALIFIED_RATE_1,"
 						" CASE WHEN SUM(A.ACT_COSTING) < 0 THEN 0 ELSE SUM(A.ACT_COSTING) END ACT_COSTING_1,"
@@ -2347,14 +3494,28 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-52：日期按天前推过滤;过滤边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT A.DATE_TIME, A.ADJUST_CHARGE ADJUST_CHARGE_1, A.MOLTIRON_WT MOLTIRON_WT_1, A.REMARK REMARK_1,"
+						// " B.ADJUST_CHARGE ADJUST_CHARGE_2, B.MOLTIRON_WT MOLTIRON_WT_2, B.REMARK REMARK_2, A.MOLTIRON_WT + B.MOLTIRON_WT MOLTIRON_WT_TOTAL"
+						// " FROM TFOSMT10D A"
+						// " LEFT JOIN TFOSMT10D B ON A.DATE_TIME = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " WHERE A.FACTORY_DIV = 'A10'"
+						// " AND A.DATE_TIME >= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAYS),'YYYYMMDD')"
+						// " AND A.DATE_TIME <= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMMDD')"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT A.DATE_TIME, A.ADJUST_CHARGE ADJUST_CHARGE_1, A.MOLTIRON_WT MOLTIRON_WT_1, A.REMARK REMARK_1,"
 						" B.ADJUST_CHARGE ADJUST_CHARGE_2, B.MOLTIRON_WT MOLTIRON_WT_2, B.REMARK REMARK_2, A.MOLTIRON_WT + B.MOLTIRON_WT MOLTIRON_WT_TOTAL"
 						" FROM TFOSMT10D A"
 						" LEFT JOIN TFOSMT10D B ON A.DATE_TIME = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
 						" WHERE A.FACTORY_DIV = 'A10'"
-						" AND A.DATE_TIME >= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAYS),'YYYYMMDD')"
-						" AND A.DATE_TIME <= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMMDD')"
+						" AND A.DATE_TIME >= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 10),'YYYYMMDD')"
+						" AND A.DATE_TIME <= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYYMMDD')"
 						;
 					break;
 				}
@@ -2371,6 +3532,22 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-53：日期按天前推过滤;过滤边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT '合计' DATE_TIME,"
+						// " SUM(A.ADJUST_CHARGE) ADJUST_CHARGE_1, SUM(A.MOLTIRON_WT) MOLTIRON_WT_1, '' REMARK_1,"
+						// " SUM(B.ADJUST_CHARGE) ADJUST_CHARGE_2, SUM(B.MOLTIRON_WT) MOLTIRON_WT_2, '' REMARK_2,"
+						// " SUM(A.MOLTIRON_WT + B.MOLTIRON_WT) MOLTIRON_WT_TOTAL"
+						// " FROM TFOSMT10D A"
+						// " LEFT JOIN TFOSMT10D B ON A.DATE_TIME = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
+						// " WHERE A.FACTORY_DIV = 'A10'"
+						// " AND A.DATE_TIME >= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMM') || '01'"
+						// " AND A.DATE_TIME <= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMMDD')"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT '合计' DATE_TIME,"
 						" SUM(A.ADJUST_CHARGE) ADJUST_CHARGE_1, SUM(A.MOLTIRON_WT) MOLTIRON_WT_1, '' REMARK_1,"
@@ -2379,8 +3556,8 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" FROM TFOSMT10D A"
 						" LEFT JOIN TFOSMT10D B ON A.DATE_TIME = B.DATE_TIME AND B.FACTORY_DIV = 'A20'"
 						" WHERE A.FACTORY_DIV = 'A10'"
-						" AND A.DATE_TIME >= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMM') || '01'"
-						" AND A.DATE_TIME <= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS),'YYYYMMDD')"
+						" AND A.DATE_TIME >= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYYMM') || '01'"
+						" AND A.DATE_TIME <= TO_CHAR((TO_DATE(@DATE_TIME,'YYYYMMDD') - 1),'YYYYMMDD')"
 						;
 					break;
 				}
@@ -2404,15 +3581,47 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-54：生成查询日期之前10天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
+						// " B1.RATE RATE_1, B2.RATE RATE_2, B3.RATE RATE_3, B4.RATE RATE_4,"
+						// " B5.RATE RATE_5, B6.RATE RATE_6, B7.RATE RATE_7, B8.RATE RATE_8,"
+						// " C1.RATE RATE_9, C2.RATE RATE_10, C3.RATE RATE_11, C4.RATE RATE_12"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT10E B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.FACTORY_DIV = 'A10' AND B1.MAT_CODE = '1'"
+						// " LEFT JOIN TFOSMT10E B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.FACTORY_DIV = 'A10' AND B2.MAT_CODE = '2'"
+						// " LEFT JOIN TFOSMT10E B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.FACTORY_DIV = 'A10' AND B3.MAT_CODE = '3'"
+						// " LEFT JOIN TFOSMT10E B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.FACTORY_DIV = 'A10' AND B4.MAT_CODE = '5'"
+						// " LEFT JOIN TFOSMT10E B5 ON TO_CHAR(A.TIME,'YYYYMMDD') = B5.DATE_TIME AND B5.FACTORY_DIV = 'A20' AND B5.MAT_CODE = '1'"
+						// " LEFT JOIN TFOSMT10E B6 ON TO_CHAR(A.TIME,'YYYYMMDD') = B6.DATE_TIME AND B6.FACTORY_DIV = 'A20' AND B6.MAT_CODE = '2'"
+						// " LEFT JOIN TFOSMT10E B7 ON TO_CHAR(A.TIME,'YYYYMMDD') = B7.DATE_TIME AND B7.FACTORY_DIV = 'A20' AND B7.MAT_CODE = '3'"
+						// " LEFT JOIN TFOSMT10E B8 ON TO_CHAR(A.TIME,'YYYYMMDD') = B8.DATE_TIME AND B8.FACTORY_DIV = 'A20' AND B8.MAT_CODE = '5'"
+						// " LEFT JOIN TFOSMT10E C1 ON TO_CHAR(A.TIME,'YYYYMMDD') = C1.DATE_TIME AND C1.FACTORY_DIV = 'A00' AND C1.MAT_CODE = '1'"
+						// " LEFT JOIN TFOSMT10E C2 ON TO_CHAR(A.TIME,'YYYYMMDD') = C2.DATE_TIME AND C2.FACTORY_DIV = 'A00' AND C2.MAT_CODE = '2'"
+						// " LEFT JOIN TFOSMT10E C3 ON TO_CHAR(A.TIME,'YYYYMMDD') = C3.DATE_TIME AND C3.FACTORY_DIV = 'A00' AND C3.MAT_CODE = '3'"
+						// " LEFT JOIN TFOSMT10E C4 ON TO_CHAR(A.TIME,'YYYYMMDD') = C4.DATE_TIME AND C4.FACTORY_DIV = 'A00' AND C4.MAT_CODE = '5'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME,"
 						" B1.RATE RATE_1, B2.RATE RATE_2, B3.RATE RATE_3, B4.RATE RATE_4,"
 						" B5.RATE RATE_5, B6.RATE RATE_6, B7.RATE RATE_7, B8.RATE RATE_8,"
@@ -2446,15 +3655,47 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-55：生成查询日期之前1天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT '合计' DATE_TIME,"
+						// " ROUND(AVG(B1.RATE),2) RATE_1, ROUND(AVG(B2.RATE),2) RATE_2, ROUND(AVG(B3.RATE),2) RATE_3, ROUND(AVG(B4.RATE),2) RATE_4,"
+						// " ROUND(AVG(B5.RATE),2) RATE_5, ROUND(AVG(B6.RATE),2) RATE_6, ROUND(AVG(B7.RATE),2) RATE_7, ROUND(AVG(B8.RATE),2) RATE_8,"
+						// " ROUND(AVG(C1.RATE),2) RATE_9, ROUND(AVG(C2.RATE),2) RATE_10, ROUND(AVG(C3.RATE),2) RATE_11, ROUND(AVG(C4.RATE),2) RATE_12"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT10E B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.FACTORY_DIV = 'A10' AND B1.MAT_CODE = '1'"
+						// " LEFT JOIN TFOSMT10E B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.FACTORY_DIV = 'A10' AND B2.MAT_CODE = '2'"
+						// " LEFT JOIN TFOSMT10E B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.FACTORY_DIV = 'A10' AND B3.MAT_CODE = '3'"
+						// " LEFT JOIN TFOSMT10E B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.FACTORY_DIV = 'A10' AND B4.MAT_CODE = '5'"
+						// " LEFT JOIN TFOSMT10E B5 ON TO_CHAR(A.TIME,'YYYYMMDD') = B5.DATE_TIME AND B5.FACTORY_DIV = 'A20' AND B5.MAT_CODE = '1'"
+						// " LEFT JOIN TFOSMT10E B6 ON TO_CHAR(A.TIME,'YYYYMMDD') = B6.DATE_TIME AND B6.FACTORY_DIV = 'A20' AND B6.MAT_CODE = '2'"
+						// " LEFT JOIN TFOSMT10E B7 ON TO_CHAR(A.TIME,'YYYYMMDD') = B7.DATE_TIME AND B7.FACTORY_DIV = 'A20' AND B7.MAT_CODE = '3'"
+						// " LEFT JOIN TFOSMT10E B8 ON TO_CHAR(A.TIME,'YYYYMMDD') = B8.DATE_TIME AND B8.FACTORY_DIV = 'A20' AND B8.MAT_CODE = '5'"
+						// " LEFT JOIN TFOSMT10E C1 ON TO_CHAR(A.TIME,'YYYYMMDD') = C1.DATE_TIME AND C1.FACTORY_DIV = 'A00' AND C1.MAT_CODE = '1'"
+						// " LEFT JOIN TFOSMT10E C2 ON TO_CHAR(A.TIME,'YYYYMMDD') = C2.DATE_TIME AND C2.FACTORY_DIV = 'A00' AND C2.MAT_CODE = '2'"
+						// " LEFT JOIN TFOSMT10E C3 ON TO_CHAR(A.TIME,'YYYYMMDD') = C3.DATE_TIME AND C3.FACTORY_DIV = 'A00' AND C3.MAT_CODE = '3'"
+						// " LEFT JOIN TFOSMT10E C4 ON TO_CHAR(A.TIME,'YYYYMMDD') = C4.DATE_TIME AND C4.FACTORY_DIV = 'A00' AND C4.MAT_CODE = '5'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01','YYYYMMDD')"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT '合计' DATE_TIME,"
 						" ROUND(AVG(B1.RATE),2) RATE_1, ROUND(AVG(B2.RATE),2) RATE_2, ROUND(AVG(B3.RATE),2) RATE_3, ROUND(AVG(B4.RATE),2) RATE_4,"
 						" ROUND(AVG(B5.RATE),2) RATE_5, ROUND(AVG(B6.RATE),2) RATE_6, ROUND(AVG(B7.RATE),2) RATE_7, ROUND(AVG(B8.RATE),2) RATE_8,"
@@ -2495,15 +3736,41 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-56：生成查询日期之前10天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B1.PRODUCT_CHARGE PRODUCT_CHARGE_1,"
+						// " B1.SMELT_CHARGE SMELT_CHARGE_L1, B1.RATE RATE_L1, B1.RATIO_NUM RATIO_NUM_L1, B1.TOTAL_DURATION TOTAL_DURATION_L1,"
+						// " B2.SMELT_CHARGE SMELT_CHARGE_R1, B2.RATE RATE_R1,"
+						// " B3.PRODUCT_CHARGE PRODUCT_CHARGE_2,"
+						// " B3.SMELT_CHARGE SMELT_CHARGE_L2, B3.RATE RATE_L2, B3.RATIO_NUM RATIO_NUM_L2, B3.TOTAL_DURATION TOTAL_DURATION_L2,"
+						// " B4.SMELT_CHARGE SMELT_CHARGE_R2, B4.RATE RATE_R2"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT10F B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.FACTORY_DIV = 'A10' AND B1.STATION_ID = 'L'"
+						// " LEFT JOIN TFOSMT10F B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.FACTORY_DIV = 'A10' AND B2.STATION_ID = 'R'"
+						// " LEFT JOIN TFOSMT10F B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.FACTORY_DIV = 'A20' AND B3.STATION_ID = 'L'"
+						// " LEFT JOIN TFOSMT10F B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.FACTORY_DIV = 'A20' AND B4.STATION_ID = 'R'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 10"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(A.TIME,'YYYYMMDD') DATE_TIME, B1.PRODUCT_CHARGE PRODUCT_CHARGE_1,"
 						" B1.SMELT_CHARGE SMELT_CHARGE_L1, B1.RATE RATE_L1, B1.RATIO_NUM RATIO_NUM_L1, B1.TOTAL_DURATION TOTAL_DURATION_L1,"
 						" B2.SMELT_CHARGE SMELT_CHARGE_R1, B2.RATE RATE_R1,"
@@ -2531,15 +3798,45 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-57：生成查询日期之前1天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH A(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, A"
+						// " WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT '合计' DATE_TIME, SUM(B1.PRODUCT_CHARGE) PRODUCT_CHARGE_1,"
+						// " SUM(B1.SMELT_CHARGE) SMELT_CHARGE_L1, ROUND(100.0 * SUM(B1.SMELT_CHARGE) / SUM(B1.PRODUCT_CHARGE),2) RATE_L1,"
+						// " ROUND(100.0 * SUM(0.01 * B1.RATIO_NUM * B1.PRODUCT_CHARGE) / SUM(B1.PRODUCT_CHARGE),2) RATIO_NUM_L1,"
+						// " ROUND(AVG(B1.TOTAL_DURATION),1) TOTAL_DURATION_L1,"
+						// " SUM(B2.SMELT_CHARGE) SMELT_CHARGE_R1, ROUND(100.0 * SUM(B2.SMELT_CHARGE) / SUM(B2.PRODUCT_CHARGE),2) RATE_R1,"
+						// " SUM(B3.PRODUCT_CHARGE) PRODUCT_CHARGE_2,"
+						// " SUM(B3.SMELT_CHARGE) SMELT_CHARGE_L2, ROUND(100.0 * SUM(B3.SMELT_CHARGE) / SUM(B3.PRODUCT_CHARGE),2) RATE_L2,"
+						// " ROUND(100.0 * SUM(0.01 * B3.RATIO_NUM * B3.PRODUCT_CHARGE) / SUM(B3.PRODUCT_CHARGE),2) RATIO_NUM_L2,"
+						// " ROUND(AVG(B3.TOTAL_DURATION),1) TOTAL_DURATION_L2,"
+						// " SUM(B4.SMELT_CHARGE) SMELT_CHARGE_R2, ROUND(100.0 * SUM(B4.SMELT_CHARGE) / SUM(B4.PRODUCT_CHARGE),2) RATE_R2"
+						// " FROM A"
+						// " LEFT JOIN TFOSMT10F B1 ON TO_CHAR(A.TIME,'YYYYMMDD') = B1.DATE_TIME AND B1.FACTORY_DIV = 'A10' AND B1.STATION_ID = 'L'"
+						// " LEFT JOIN TFOSMT10F B2 ON TO_CHAR(A.TIME,'YYYYMMDD') = B2.DATE_TIME AND B2.FACTORY_DIV = 'A10' AND B2.STATION_ID = 'R'"
+						// " LEFT JOIN TFOSMT10F B3 ON TO_CHAR(A.TIME,'YYYYMMDD') = B3.DATE_TIME AND B3.FACTORY_DIV = 'A20' AND B3.STATION_ID = 'L'"
+						// " LEFT JOIN TFOSMT10F B4 ON TO_CHAR(A.TIME,'YYYYMMDD') = B4.DATE_TIME AND B4.FACTORY_DIV = 'A20' AND B4.STATION_ID = 'R'"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH A(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY,'YYYYMM') || '01','YYYYMMDD')"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01','YYYYMMDD')"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, A"
-						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, A"
+						" WHERE A.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT '合计' DATE_TIME, SUM(B1.PRODUCT_CHARGE) PRODUCT_CHARGE_1,"
 						" SUM(B1.SMELT_CHARGE) SMELT_CHARGE_L1, ROUND(100.0 * SUM(B1.SMELT_CHARGE) / SUM(B1.PRODUCT_CHARGE),2) RATE_L1,"
 						" ROUND(100.0 * SUM(0.01 * B1.RATIO_NUM * B1.PRODUCT_CHARGE) / SUM(B1.PRODUCT_CHARGE),2) RATIO_NUM_L1,"
@@ -2578,15 +3875,35 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-58：生成查询日期之前3天的日期序列;日期边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " WITH T(LEVEL, TIME) AS"
+						// " (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
+						// " FROM SYSIBM.SYSDUMMY1"
+						// " WHERE 1 = 1"
+						// " UNION ALL"
+						// " SELECT LEVEL + 1,TIME + 1 DAY"
+						// " FROM SYSIBM.SYSDUMMY1, T"
+						// " WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						// " SELECT TO_CHAR(T.TIME,'YYYYMMDD') DATE_TIME, '' AAA, SLAB_WT, TO_CHAR(CAST(MOLTIRON_WT AS DECIMAL(10,0))) MOLTIRON_WT, TO_CHAR(CAST(SCRAP_STEEL_TPC AS DECIMAL(10,0))) SCRAP_STEEL_TPC, MAT_WT, STOCK_TOTAL_WT,"
+						// " TO_CHAR(IRON_STEEL_RATE1) IRON_STEEL_RATE1, IRON_STEEL_RATE2, TO_CHAR(DAYS) AS DAYS, RATE_FINISH_DAY"
+						// " FROM T"
+						// " LEFT JOIN TFOSMT10G A ON A.DATE_TIME = TO_CHAR(T.TIME,'YYYYMMDD')"
+						// " WHERE 1 = 1"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" WITH T(LEVEL, TIME) AS"
-						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY"
-						" FROM SYSIBM.SYSDUMMY1"
+						" (SELECT 1, TO_DATE(@DATE_TIME,'YYYYMMDD') - 3"
+						" FROM DUAL"
 						" WHERE 1 = 1"
 						" UNION ALL"
-						" SELECT LEVEL + 1,TIME + 1 DAY"
-						" FROM SYSIBM.SYSDUMMY1, T"
-						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY)"
+						" SELECT LEVEL + 1,TIME + 1"
+						" FROM DUAL, T"
+						" WHERE T.TIME < TO_DATE(@DATE_TIME,'YYYYMMDD') - 1)"
 						" SELECT TO_CHAR(T.TIME,'YYYYMMDD') DATE_TIME, '' AAA, SLAB_WT, TO_CHAR(CAST(MOLTIRON_WT AS DECIMAL(10,0))) MOLTIRON_WT, TO_CHAR(CAST(SCRAP_STEEL_TPC AS DECIMAL(10,0))) SCRAP_STEEL_TPC, MAT_WT, STOCK_TOTAL_WT,"
 						" TO_CHAR(IRON_STEEL_RATE1) IRON_STEEL_RATE1, IRON_STEEL_RATE2, TO_CHAR(DAYS) AS DAYS, RATE_FINISH_DAY"
 						" FROM T"
@@ -2608,6 +3925,22 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-59：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT"
+						// " '月度合计' DATE_TIME, '' AAA,"
+						// " SLAB_WT, TO_CHAR(CAST(MOLTIRON_WT AS DECIMAL(10,0))) MOLTIRON_WT, TO_CHAR(CAST(SCRAP_STEEL_TPC AS DECIMAL(10,0))) SCRAP_STEEL_TPC,"
+						// " MAT_WT, STOCK_TOTAL_WT,"
+						// " TO_CHAR(IRON_STEEL_RATE1) IRON_STEEL_RATE1,"
+						// " IRON_STEEL_RATE2,"
+						// " TO_CHAR(A.DAYS) AS DAYS, RATE_FINISH_DAY"
+						// " FROM TFOSMT10H A"
+						// " WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT"
 						" '月度合计' DATE_TIME, '' AAA,"
@@ -2617,7 +3950,7 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" IRON_STEEL_RATE2,"
 						" TO_CHAR(A.DAYS) AS DAYS, RATE_FINISH_DAY"
 						" FROM TFOSMT10H A"
-						" WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						;
 					break;
 				}
@@ -2638,6 +3971,33 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-60：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT '年度累计（万吨）' DATE_TIME, '' AAA,"
+						// " ROUND(A.SLAB_WT / 10000,2) + TO_NUMBER(B.REMARK) SLAB_WT,"
+						// " TO_CHAR(CAST(ROUND(A.MOLTIRON_WT / 10000,2) + TO_NUMBER(C.REMARK) AS DECIMAL(10,2))) MOLTIRON_WT,"
+						// " TO_CHAR(CAST(ROUND(A.SCRAP_STEEL_TPC / 10000,2) + TO_NUMBER(D.REMARK) AS DECIMAL(10,2))) SCRAP_STEEL_TPC,"
+						// " ROUND(A.MAT_WT / 10000,2) + TO_NUMBER(E.REMARK) MAT_WT,"
+						// " ROUND(A.STOCK_TOTAL_WT / 10000,2) + TO_NUMBER(F.REMARK) STOCK_TOTAL_WT,"
+						// " TO_CHAR(CAST(ROUND(1.0000 * (ROUND(A.SLAB_WT / 10000,2) + TO_NUMBER(B.REMARK))"
+						// " / (ROUND(A.MAT_WT / 10000,2) + TO_NUMBER(E.REMARK)),4) AS DECIMAL(5,4))) IRON_STEEL_RATE1,"
+						// " CAST(ROUND(1.0000 * ROUND(T.MOLTIRON_WT1 / 10000,2)"
+						// " / (ROUND(A.STOCK_TOTAL_WT / 10000,2) + TO_NUMBER(F.REMARK)),4) AS DECIMAL(5,4)) IRON_STEEL_RATE2,"
+						// " TO_CHAR(A.DAYS) AS DAYS, A.RATE_FINISH_DAY"
+						// " FROM TFOSMT10H A"
+						// " LEFT JOIN TFOSMT96B B ON B.ITEM_ENAME = 'FOSMT10-603' AND B.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
+						// " LEFT JOIN TFOSMT96B C ON C.ITEM_ENAME = 'FOSMT10-604' AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
+						// " LEFT JOIN TFOSMT96B D ON D.ITEM_ENAME = 'FOSMT10-605' AND D.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
+						// " LEFT JOIN TFOSMT96B E ON E.ITEM_ENAME = 'FOSMT10-606' AND E.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
+						// " LEFT JOIN TFOSMT96B F ON F.ITEM_ENAME = 'FOSMT10-607' AND F.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
+						// " LEFT JOIN (SELECT SUM(MOLTIRON_WT1) MOLTIRON_WT1 FROM TFOSMT10G WHERE DATE_TIME < @DATE_TIME"
+						// " AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYY') || '0101') T ON 1 = 1"
+						// " WHERE A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT '年度累计（万吨）' DATE_TIME, '' AAA,"
 						" ROUND(A.SLAB_WT / 10000,2) + TO_NUMBER(B.REMARK) SLAB_WT,"
@@ -2651,14 +4011,14 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" / (ROUND(A.STOCK_TOTAL_WT / 10000,2) + TO_NUMBER(F.REMARK)),4) AS DECIMAL(5,4)) IRON_STEEL_RATE2,"
 						" TO_CHAR(A.DAYS) AS DAYS, A.RATE_FINISH_DAY"
 						" FROM TFOSMT10H A"
-						" LEFT JOIN TFOSMT96B B ON B.ITEM_ENAME = 'FOSMT10-603' AND B.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
-						" LEFT JOIN TFOSMT96B C ON C.ITEM_ENAME = 'FOSMT10-604' AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
-						" LEFT JOIN TFOSMT96B D ON D.ITEM_ENAME = 'FOSMT10-605' AND D.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
-						" LEFT JOIN TFOSMT96B E ON E.ITEM_ENAME = 'FOSMT10-606' AND E.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
-						" LEFT JOIN TFOSMT96B F ON F.ITEM_ENAME = 'FOSMT10-607' AND F.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM')"
+						" LEFT JOIN TFOSMT96B B ON B.ITEM_ENAME = 'FOSMT10-603' AND B.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM')"
+						" LEFT JOIN TFOSMT96B C ON C.ITEM_ENAME = 'FOSMT10-604' AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM')"
+						" LEFT JOIN TFOSMT96B D ON D.ITEM_ENAME = 'FOSMT10-605' AND D.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM')"
+						" LEFT JOIN TFOSMT96B E ON E.ITEM_ENAME = 'FOSMT10-606' AND E.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM')"
+						" LEFT JOIN TFOSMT96B F ON F.ITEM_ENAME = 'FOSMT10-607' AND F.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM')"
 						" LEFT JOIN (SELECT SUM(MOLTIRON_WT1) MOLTIRON_WT1 FROM TFOSMT10G WHERE DATE_TIME < @DATE_TIME"
-						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYY') || '0101') T ON 1 = 1"
-						" WHERE A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYY') || '0101') T ON 1 = 1"
+						" WHERE A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						;
 					break;
 				}
@@ -2679,9 +4039,34 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-61：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：SYSIBM 辅助表改为 DUAL；DB2 日期天数后缀改为整数天运算；ROWNUM 别名改为 RN,避免与 DM 伪列关键字冲突；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT DATE_TIME,AAA,SLAB_WT,MOLTIRON_WT,SCRAP_STEEL_TPC,STOCK_TOTAL_WT,IRON_STEEL_RATE1,IRON_STEEL_RATE2,T.DAYS,RATE_FINISH_DAY FROM"
+						// " (SELECT '1' ROWNUM,"
+						// " '年产进度' DATE_TIME, '' AAA,"
+						// " 0 SLAB_WT,"
+						// " '' MOLTIRON_WT, '' SCRAP_STEEL_TPC,"
+						// " 0 STOCK_TOTAL_WT,"
+						// " '比月度目标' IRON_STEEL_RATE1,"
+						// " 0 IRON_STEEL_RATE2,"
+						// " '比年产目标' AS DAYS, 0 RATE_FINISH_DAY"
+						// " FROM (SELECT * FROM SYSIBM.DUAL)"
+						// " UNION ALL"
+						// " SELECT '2','铁厂','钢厂',0,'','',0,'',0,'',0 FROM SYSIBM.DUAL"
+						// " UNION ALL"
+						// " SELECT '3',B1.REMARK,B2.REMARK,0,'','',0,'',0,'',0 FROM SYSIBM.DUAL"
+						// " LEFT JOIN TFOSMT96B B1 ON B1.ITEM_ENAME = 'FOSMT10-601' AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYY')"
+						// " LEFT JOIN TFOSMT96B B2 ON B2.ITEM_ENAME = 'FOSMT10-602' AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYY')"
+						// " ) T"
+						// " ORDER BY ROWNUM"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT DATE_TIME,AAA,SLAB_WT,MOLTIRON_WT,SCRAP_STEEL_TPC,STOCK_TOTAL_WT,IRON_STEEL_RATE1,IRON_STEEL_RATE2,T.DAYS,RATE_FINISH_DAY FROM"
-						" (SELECT '1' ROWNUM,"
+						" (SELECT '1' RN,"
 						" '年产进度' DATE_TIME, '' AAA,"
 						" 0 SLAB_WT,"
 						" '' MOLTIRON_WT, '' SCRAP_STEEL_TPC,"
@@ -2689,15 +4074,15 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" '比月度目标' IRON_STEEL_RATE1,"
 						" 0 IRON_STEEL_RATE2,"
 						" '比年产目标' AS DAYS, 0 RATE_FINISH_DAY"
-						" FROM (SELECT * FROM SYSIBM.DUAL)"
+						" FROM (SELECT * FROM DUAL)"
 						" UNION ALL"
-						" SELECT '2','铁厂','钢厂',0,'','',0,'',0,'',0 FROM SYSIBM.DUAL"
+						" SELECT '2','铁厂','钢厂',0,'','',0,'',0,'',0 FROM DUAL"
 						" UNION ALL"
-						" SELECT '3',B1.REMARK,B2.REMARK,0,'','',0,'',0,'',0 FROM SYSIBM.DUAL"
-						" LEFT JOIN TFOSMT96B B1 ON B1.ITEM_ENAME = 'FOSMT10-601' AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYY')"
-						" LEFT JOIN TFOSMT96B B2 ON B2.ITEM_ENAME = 'FOSMT10-602' AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYY')"
+						" SELECT '3',B1.REMARK,B2.REMARK,0,'','',0,'',0,'',0 FROM DUAL"
+						" LEFT JOIN TFOSMT96B B1 ON B1.ITEM_ENAME = 'FOSMT10-601' AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYY')"
+						" LEFT JOIN TFOSMT96B B2 ON B2.ITEM_ENAME = 'FOSMT10-602' AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYY')"
 						" ) T"
-						" ORDER BY ROWNUM"
+						" ORDER BY RN"
 						;
 					break;
 				}
@@ -2728,15 +4113,30 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-62：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT ROUND((ROUND((B.SLAB_WT / C.REMARK) * 100,2) - A.TIME_PROGRESS) * C.REMARK / 100,2)"
+						// " FROM TFOSMT03A A"
+						// " LEFT JOIN (SELECT ROUND((0.999 * (SUM(SLAB_WT_1) + SUM(SLAB_WT_2))) / 10000,2) SLAB_WT FROM TFOSMT03A"
+						// " WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM') || '01' AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')) B ON 1 = 1"
+						// " LEFT JOIN (SELECT SUM(TO_NUMBER(REMARK)) / 10000 REMARK FROM TFOSMT96B"
+						// " WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM') AND ITEM_ENAME IN ('FOSMT03-107','FOSMT03-108'))"
+						// " C ON 1 = 1"
+						// " WHERE A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT ROUND((ROUND((B.SLAB_WT / C.REMARK) * 100,2) - A.TIME_PROGRESS) * C.REMARK / 100,2)"
 						" FROM TFOSMT03A A"
 						" LEFT JOIN (SELECT ROUND((0.999 * (SUM(SLAB_WT_1) + SUM(SLAB_WT_2))) / 10000,2) SLAB_WT FROM TFOSMT03A"
-						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM') || '01' AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')) B ON 1 = 1"
+						" WHERE DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') || '01' AND DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')) B ON 1 = 1"
 						" LEFT JOIN (SELECT SUM(TO_NUMBER(REMARK)) / 10000 REMARK FROM TFOSMT96B"
-						" WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMM') AND ITEM_ENAME IN ('FOSMT03-107','FOSMT03-108'))"
+						" WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMM') AND ITEM_ENAME IN ('FOSMT03-107','FOSMT03-108'))"
 						" C ON 1 = 1"
-						" WHERE A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS,'YYYYMMDD')"
+						" WHERE A.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1,'YYYYMMDD')"
 						;
 					break;
 				}
@@ -2760,6 +4160,70 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-63：取查询日期前推7日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT A.CODE, A2.CODE FACTORY_DIV, A.CODE_DESC_1_CONTENT ITEM_CNAME,"
+						// " COALESCE(C.UNIT_COST, 0) REMARK,"
+						// " COALESCE(B1.UNIT_COST, 0) REMARK_1,"
+						// " COALESCE(B2.UNIT_COST, 0) REMARK_2,"
+						// " COALESCE(B3.UNIT_COST, 0) REMARK_3,"
+						// " COALESCE(B4.UNIT_COST, 0) REMARK_4,"
+						// " COALESCE(B5.UNIT_COST, 0) REMARK_5,"
+						// " COALESCE(B6.UNIT_COST, 0) REMARK_6,"
+						// " COALESCE(B7.UNIT_COST, 0) REMARK_7,"
+						// " COALESCE(ROUND(D.REMARK_MON, 2), 0) REMARK_MON,"
+						// " COALESCE(ROUND(E.REMARK_YEAR, 2), 0) REMARK_YEAR"
+						// " FROM TEP0002 A"
+						// " LEFT JOIN TEP0002 A2 ON A2.CODE_CLASS = 'FOSMT5' AND A2.CODE IN ('A10','A20')"
+						// " LEFT JOIN TFOSMT10J B1 ON A.CODE = B1.ITEM_ENAME AND B1.FACTORY_DIV = A2.CODE AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B2 ON A.CODE = B2.ITEM_ENAME AND B2.FACTORY_DIV = A2.CODE AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 6 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B3 ON A.CODE = B3.ITEM_ENAME AND B3.FACTORY_DIV = A2.CODE AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B4 ON A.CODE = B4.ITEM_ENAME AND B4.FACTORY_DIV = A2.CODE AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B5 ON A.CODE = B5.ITEM_ENAME AND B5.FACTORY_DIV = A2.CODE AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B6 ON A.CODE = B6.ITEM_ENAME AND B6.FACTORY_DIV = A2.CODE AND B6.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B7 ON A.CODE = B7.ITEM_ENAME AND B7.FACTORY_DIV = A2.CODE AND B7.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J C ON A.CODE = C.ITEM_ENAME AND C.FACTORY_DIV = A2.CODE AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM')"
+						// " LEFT JOIN ("
+						// " SELECT ITEM_ENAME, FACTORY_DIV, SUM(TO_NUMBER(REMARK1)), SUM(TO_NUMBER(REMARK2)),"
+						// " CASE WHEN ITEM_ENAME = '06' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK6)), 0, 0, SUM(TO_NUMBER(REMARK5)) / SUM(TO_NUMBER(REMARK6)))"
+						// " WHEN ITEM_ENAME = '01' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " END REMARK_MON"
+						// " FROM TFOSMT10J"
+						// " WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
+						// " AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM') || '01'"
+						// " AND LENGTH(DATE_TIME) = 8"
+						// " GROUP BY ITEM_ENAME, FACTORY_DIV"
+						// " ) D ON A.CODE = D.ITEM_ENAME AND D.FACTORY_DIV = A2.CODE"
+						// " LEFT JOIN ("
+						// " SELECT ITEM_ENAME, FACTORY_DIV, SUM(TO_NUMBER(REMARK1)), SUM(TO_NUMBER(REMARK2)),"
+						// " CASE WHEN ITEM_ENAME = '06' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK6)), 0, 0, SUM(TO_NUMBER(REMARK5)) / SUM(TO_NUMBER(REMARK6)))"
+						// " WHEN ITEM_ENAME = '01' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " END REMARK_YEAR"
+						// " FROM TFOSMT10J"
+						// " WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
+						// " AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYY') || '0101'"
+						// " AND LENGTH(DATE_TIME) = 8"
+						// " GROUP BY ITEM_ENAME, FACTORY_DIV"
+						// " ) E ON A.CODE = E.ITEM_ENAME AND E.FACTORY_DIV = A2.CODE"
+						// " WHERE A.CODE_CLASS = 'FOSMTD' AND TRIM(A.CODE_DESC_2_CONTENT) <> ''"
+						// " ORDER BY A2.CODE, A.CODE_DESC_2_CONTENT, A.CODE"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT A.CODE, A2.CODE FACTORY_DIV, A.CODE_DESC_1_CONTENT ITEM_CNAME,"
 						" COALESCE(C.UNIT_COST, 0) REMARK,"
@@ -2774,14 +4238,14 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" COALESCE(ROUND(E.REMARK_YEAR, 2), 0) REMARK_YEAR"
 						" FROM TEP0002 A"
 						" LEFT JOIN TEP0002 A2 ON A2.CODE_CLASS = 'FOSMT5' AND A2.CODE IN ('A10','A20')"
-						" LEFT JOIN TFOSMT10J B1 ON A.CODE = B1.ITEM_ENAME AND B1.FACTORY_DIV = A2.CODE AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B2 ON A.CODE = B2.ITEM_ENAME AND B2.FACTORY_DIV = A2.CODE AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 6 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B3 ON A.CODE = B3.ITEM_ENAME AND B3.FACTORY_DIV = A2.CODE AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B4 ON A.CODE = B4.ITEM_ENAME AND B4.FACTORY_DIV = A2.CODE AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B5 ON A.CODE = B5.ITEM_ENAME AND B5.FACTORY_DIV = A2.CODE AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B6 ON A.CODE = B6.ITEM_ENAME AND B6.FACTORY_DIV = A2.CODE AND B6.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B7 ON A.CODE = B7.ITEM_ENAME AND B7.FACTORY_DIV = A2.CODE AND B7.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J C ON A.CODE = C.ITEM_ENAME AND C.FACTORY_DIV = A2.CODE AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM')"
+						" LEFT JOIN TFOSMT10J B1 ON A.CODE = B1.ITEM_ENAME AND B1.FACTORY_DIV = A2.CODE AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B2 ON A.CODE = B2.ITEM_ENAME AND B2.FACTORY_DIV = A2.CODE AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 6, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B3 ON A.CODE = B3.ITEM_ENAME AND B3.FACTORY_DIV = A2.CODE AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B4 ON A.CODE = B4.ITEM_ENAME AND B4.FACTORY_DIV = A2.CODE AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B5 ON A.CODE = B5.ITEM_ENAME AND B5.FACTORY_DIV = A2.CODE AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B6 ON A.CODE = B6.ITEM_ENAME AND B6.FACTORY_DIV = A2.CODE AND B6.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B7 ON A.CODE = B7.ITEM_ENAME AND B7.FACTORY_DIV = A2.CODE AND B7.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J C ON A.CODE = C.ITEM_ENAME AND C.FACTORY_DIV = A2.CODE AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMM')"
 						" LEFT JOIN ("
 						" SELECT ITEM_ENAME, FACTORY_DIV, SUM(TO_NUMBER(REMARK1)), SUM(TO_NUMBER(REMARK2)),"
 						" CASE WHEN ITEM_ENAME = '06' THEN"
@@ -2794,8 +4258,8 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
 						" END REMARK_MON"
 						" FROM TFOSMT10J"
-						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
-						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM') || '01'"
+						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD')"
+						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMM') || '01'"
 						" AND LENGTH(DATE_TIME) = 8"
 						" GROUP BY ITEM_ENAME, FACTORY_DIV"
 						" ) D ON A.CODE = D.ITEM_ENAME AND D.FACTORY_DIV = A2.CODE"
@@ -2811,8 +4275,8 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
 						" END REMARK_YEAR"
 						" FROM TFOSMT10J"
-						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
-						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYY') || '0101'"
+						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD')"
+						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYY') || '0101'"
 						" AND LENGTH(DATE_TIME) = 8"
 						" GROUP BY ITEM_ENAME, FACTORY_DIV"
 						" ) E ON A.CODE = E.ITEM_ENAME AND E.FACTORY_DIV = A2.CODE"
@@ -2834,6 +4298,70 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-64：取查询日期前推7日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT A.CODE, A2.CODE FACTORY_DIV, A.CODE_DESC_1_CONTENT ITEM_CNAME,"
+						// " COALESCE(C.UNIT_COST, 0) REMARK,"
+						// " COALESCE(B1.UNIT_COST, 0) REMARK_1,"
+						// " COALESCE(B2.UNIT_COST, 0) REMARK_2,"
+						// " COALESCE(B3.UNIT_COST, 0) REMARK_3,"
+						// " COALESCE(B4.UNIT_COST, 0) REMARK_4,"
+						// " COALESCE(B5.UNIT_COST, 0) REMARK_5,"
+						// " COALESCE(B6.UNIT_COST, 0) REMARK_6,"
+						// " COALESCE(B7.UNIT_COST, 0) REMARK_7,"
+						// " COALESCE(ROUND(D.REMARK_MON, 2), 0) REMARK_MON,"
+						// " COALESCE(ROUND(E.REMARK_YEAR, 2), 0) REMARK_YEAR"
+						// " FROM TEP0002 A"
+						// " LEFT JOIN TEP0002 A2 ON A2.CODE_CLASS = 'FOSMT5' AND A2.CODE = 'A00'"
+						// " LEFT JOIN TFOSMT10J B1 ON A.CODE = B1.ITEM_ENAME AND B1.FACTORY_DIV = A2.CODE AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B2 ON A.CODE = B2.ITEM_ENAME AND B2.FACTORY_DIV = A2.CODE AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 6 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B3 ON A.CODE = B3.ITEM_ENAME AND B3.FACTORY_DIV = A2.CODE AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B4 ON A.CODE = B4.ITEM_ENAME AND B4.FACTORY_DIV = A2.CODE AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B5 ON A.CODE = B5.ITEM_ENAME AND B5.FACTORY_DIV = A2.CODE AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B6 ON A.CODE = B6.ITEM_ENAME AND B6.FACTORY_DIV = A2.CODE AND B6.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J B7 ON A.CODE = B7.ITEM_ENAME AND B7.FACTORY_DIV = A2.CODE AND B7.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
+						// " LEFT JOIN TFOSMT10J C ON A.CODE = C.ITEM_ENAME AND C.FACTORY_DIV = A2.CODE AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM')"
+						// " LEFT JOIN ("
+						// " SELECT ITEM_ENAME, FACTORY_DIV, SUM(TO_NUMBER(REMARK1)), SUM(TO_NUMBER(REMARK2)),"
+						// " CASE WHEN ITEM_ENAME = '06' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK6)), 0, 0, SUM(TO_NUMBER(REMARK5)) / SUM(TO_NUMBER(REMARK6)))"
+						// " WHEN ITEM_ENAME = '01' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " END REMARK_MON"
+						// " FROM TFOSMT10J"
+						// " WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
+						// " AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM') || '01'"
+						// " AND LENGTH(DATE_TIME) = 8"
+						// " GROUP BY ITEM_ENAME, FACTORY_DIV"
+						// " ) D ON A.CODE = D.ITEM_ENAME AND D.FACTORY_DIV = A2.CODE"
+						// " LEFT JOIN ("
+						// " SELECT ITEM_ENAME, FACTORY_DIV, SUM(TO_NUMBER(REMARK1)), SUM(TO_NUMBER(REMARK2)),"
+						// " CASE WHEN ITEM_ENAME = '06' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK6)), 0, 0, SUM(TO_NUMBER(REMARK5)) / SUM(TO_NUMBER(REMARK6)))"
+						// " WHEN ITEM_ENAME = '01' THEN"
+						// " DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " - DECODE(SUM(TO_NUMBER(REMARK4)), 0, 0, SUM(TO_NUMBER(REMARK3)) / SUM(TO_NUMBER(REMARK4)))"
+						// " ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
+						// " END REMARK_YEAR"
+						// " FROM TFOSMT10J"
+						// " WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
+						// " AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYY') || '0101'"
+						// " AND LENGTH(DATE_TIME) = 8"
+						// " GROUP BY ITEM_ENAME, FACTORY_DIV"
+						// " ) E ON A.CODE = E.ITEM_ENAME AND E.FACTORY_DIV = A2.CODE"
+						// " WHERE A.CODE_CLASS = 'FOSMTD' AND A.CODE = '06' AND A2.CODE = 'A00'"
+						// " ORDER BY A2.CODE, A.CODE_DESC_2_CONTENT, A.CODE"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT A.CODE, A2.CODE FACTORY_DIV, A.CODE_DESC_1_CONTENT ITEM_CNAME,"
 						" COALESCE(C.UNIT_COST, 0) REMARK,"
@@ -2848,14 +4376,14 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" COALESCE(ROUND(E.REMARK_YEAR, 2), 0) REMARK_YEAR"
 						" FROM TEP0002 A"
 						" LEFT JOIN TEP0002 A2 ON A2.CODE_CLASS = 'FOSMT5' AND A2.CODE = 'A00'"
-						" LEFT JOIN TFOSMT10J B1 ON A.CODE = B1.ITEM_ENAME AND B1.FACTORY_DIV = A2.CODE AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B2 ON A.CODE = B2.ITEM_ENAME AND B2.FACTORY_DIV = A2.CODE AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 6 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B3 ON A.CODE = B3.ITEM_ENAME AND B3.FACTORY_DIV = A2.CODE AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B4 ON A.CODE = B4.ITEM_ENAME AND B4.FACTORY_DIV = A2.CODE AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B5 ON A.CODE = B5.ITEM_ENAME AND B5.FACTORY_DIV = A2.CODE AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B6 ON A.CODE = B6.ITEM_ENAME AND B6.FACTORY_DIV = A2.CODE AND B6.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J B7 ON A.CODE = B7.ITEM_ENAME AND B7.FACTORY_DIV = A2.CODE AND B7.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
-						" LEFT JOIN TFOSMT10J C ON A.CODE = C.ITEM_ENAME AND C.FACTORY_DIV = A2.CODE AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM')"
+						" LEFT JOIN TFOSMT10J B1 ON A.CODE = B1.ITEM_ENAME AND B1.FACTORY_DIV = A2.CODE AND B1.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 7, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B2 ON A.CODE = B2.ITEM_ENAME AND B2.FACTORY_DIV = A2.CODE AND B2.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 6, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B3 ON A.CODE = B3.ITEM_ENAME AND B3.FACTORY_DIV = A2.CODE AND B3.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 5, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B4 ON A.CODE = B4.ITEM_ENAME AND B4.FACTORY_DIV = A2.CODE AND B4.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 4, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B5 ON A.CODE = B5.ITEM_ENAME AND B5.FACTORY_DIV = A2.CODE AND B5.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 3, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B6 ON A.CODE = B6.ITEM_ENAME AND B6.FACTORY_DIV = A2.CODE AND B6.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 2, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J B7 ON A.CODE = B7.ITEM_ENAME AND B7.FACTORY_DIV = A2.CODE AND B7.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD')"
+						" LEFT JOIN TFOSMT10J C ON A.CODE = C.ITEM_ENAME AND C.FACTORY_DIV = A2.CODE AND C.DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMM')"
 						" LEFT JOIN ("
 						" SELECT ITEM_ENAME, FACTORY_DIV, SUM(TO_NUMBER(REMARK1)), SUM(TO_NUMBER(REMARK2)),"
 						" CASE WHEN ITEM_ENAME = '06' THEN"
@@ -2868,8 +4396,8 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
 						" END REMARK_MON"
 						" FROM TFOSMT10J"
-						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
-						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMM') || '01'"
+						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD')"
+						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMM') || '01'"
 						" AND LENGTH(DATE_TIME) = 8"
 						" GROUP BY ITEM_ENAME, FACTORY_DIV"
 						" ) D ON A.CODE = D.ITEM_ENAME AND D.FACTORY_DIV = A2.CODE"
@@ -2885,8 +4413,8 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 						" ELSE DECODE(SUM(TO_NUMBER(REMARK2)), 0, 0, SUM(TO_NUMBER(REMARK1)) / SUM(TO_NUMBER(REMARK2)))"
 						" END REMARK_YEAR"
 						" FROM TFOSMT10J"
-						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYYMMDD')"
-						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAY, 'YYYY') || '0101'"
+						" WHERE DATE_TIME <= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYYMMDD')"
+						" AND DATE_TIME >= TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1, 'YYYY') || '0101'"
 						" AND LENGTH(DATE_TIME) = 8"
 						" GROUP BY ITEM_ENAME, FACTORY_DIV"
 						" ) E ON A.CODE = E.ITEM_ENAME AND E.FACTORY_DIV = A2.CODE"
@@ -2915,13 +4443,27 @@ int f_fosmt00b_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 				case DB_KIND_MSSQL:				// MS SQL Server数据库
 				case DB_KIND_ORACLE:	        // Oracle 数据库
 				default:
+// DM8 适配 CHANGE-65：取查询日期前推1日的日期字符串;日历日边界、参数与结果列保持不变。
+// 改写原因：DB2 日期天数后缀改为整数天运算；表达式级天数标注(如 DAYOFWEEK(...) DAYS)同样改为整数天运算；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+					// sqlstr =
+						// " SELECT FACTORY_DIV, STATION_ID STATION_NAME,"
+						// " REMARK_7 STATION_NO_1, REMARK_1 STATION_NO_2, REMARK_2 STATION_NO_3,"
+						// " REMARK_3 STATION_NO_4, REMARK_4 STATION_NO_5, REMARK_5 STATION_NO_6,"
+						// " REMARK_6 STATION_NO_7, REMARK_8 PERIOD_TIME, REMARK"
+						// " FROM TFOSMT11A"
+						// " WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS - DAYOFWEEK(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS) DAYS + 1 DAYS, 'YYYYMMDD')"
+						// " ORDER BY FACTORY_DIV, STATION_ID"
+						// ;
+// DM8 SQL：
 					sqlstr =
 						" SELECT FACTORY_DIV, STATION_ID STATION_NAME,"
 						" REMARK_7 STATION_NO_1, REMARK_1 STATION_NO_2, REMARK_2 STATION_NO_3,"
 						" REMARK_3 STATION_NO_4, REMARK_4 STATION_NO_5, REMARK_5 STATION_NO_6,"
 						" REMARK_6 STATION_NO_7, REMARK_8 PERIOD_TIME, REMARK"
 						" FROM TFOSMT11A"
-						" WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS - DAYOFWEEK(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 DAYS) DAYS + 1 DAYS, 'YYYYMMDD')"
+						" WHERE DATE_TIME = TO_CHAR(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1 - DAYOFWEEK(TO_DATE(@DATE_TIME,'YYYYMMDD') - 1) + 1, 'YYYYMMDD')"
 						" ORDER BY FACTORY_DIV, STATION_ID"
 						;
 					break;

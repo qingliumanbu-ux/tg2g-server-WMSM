@@ -59,6 +59,27 @@ int f_wmsmsc_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 		}
 		datetime = CDateTime::Now().ToString("yyyyMMddHHmmss");
 		CString mat_no = bcls_rec->Tables[0].Rows[0]["MAT_NO"].ToString().Replace(",", "','");
+// DM8 适配 CHANGE-379:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " with mm1 as (select t1.HEAT_NO,\
+			// t3.SG_GRADE_1,\
+			// MAX(t1.MAT_WIDTH)            MAT_WIDTH,\
+			// MAX(t1.MAT_THICK)            MAT_THICK,\
+			// t1.ST_NO,\
+			// SUM(T1.MAT_WT)               MAT_WT,\
+			// SUM(T1.MAT_LEN)              MAT_LEN,\
+			// MAX(T1.TRUCK_NO)             TRUCK_NO,\
+			// MAX(SUBSTR2(T1.SLAB_NO, 18)) SLAB_NO\
+			// from vmmsm01 t1\
+			// left join tqmts0x t3 on t1.ST_NO = t3.ST_NO\
+		// where t1.MAT_NO IN('" + mat_no + "')\
+			// GROUP BY T1.HEAT_NO, T3.SG_GRADE_1, t1.ST_NO),\
+			// mm2 as(select *\
+				// from(select HEAT_NO, ELM_NAME, ELM_ACT\
+					// from tqmts29\
+// DM8 SQL：
 		sqlstr = " with mm1 as (select t1.HEAT_NO,\
 			t3.SG_GRADE_1,\
 			MAX(t1.MAT_WIDTH)            MAT_WIDTH,\
@@ -67,7 +88,7 @@ int f_wmsmsc_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 			SUM(T1.MAT_WT)               MAT_WT,\
 			SUM(T1.MAT_LEN)              MAT_LEN,\
 			MAX(T1.TRUCK_NO)             TRUCK_NO,\
-			MAX(SUBSTR2(T1.SLAB_NO, 18)) SLAB_NO\
+			MAX(SUBSTR(T1.SLAB_NO, 18)) SLAB_NO\
 			from vmmsm01 t1\
 			left join tqmts0x t3 on t1.ST_NO = t3.ST_NO\
 		where t1.MAT_NO IN('" + mat_no + "')\

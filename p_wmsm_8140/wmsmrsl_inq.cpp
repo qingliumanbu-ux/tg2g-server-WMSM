@@ -55,9 +55,28 @@ int f_wmsmrsl_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 	try {
 
 		datetime = CDateTime::Now().ToString("yyyyMMddHHmmss");
+// DM8 适配 CHANGE-103:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " with mm1 as (\
+			// select decode(TRAN_TIME, ' ', TRAN_END_TIME, TRAN_TIME)                TRAN_TIME,\
+			// substr2(decode(TRAN_TIME, ' ', TRAN_END_TIME, TRAN_TIME), 0, 8) tran_date,\
+			// C_ISHOTSEND,\
+			// MAT_ACT_WT\
+			// from hMMSM01\
+		// where C_DIV = '2'\
+			// and C_DELIVERY_STOCK = '6361'),\
+			// mm2 as(select tran_date, sum(MAT_ACT_WT) RSL_DON from mm1 where 1 = 1 GROUP BY tran_date),\
+			// mm3 as(select tran_date, sum(MAT_ACT_WT) RSL_NUM from mm1 where 1 = 1 AND C_ISHOTSEND = '1' GROUP BY tran_date)\
+			// select A.tran_date, RSL_DON, RSL_NUM, CASE WHEN RSL_DON = 0 THEN 0 ELSE ROUND(RSL_NUM / RSL_DON, 3) END RSL_LV\
+			// from mm2 a\
+			// left join mm3 b on a.tran_date = B.tran_date\
+			// where 1 = 1 ";
+// DM8 SQL：
 		sqlstr = " with mm1 as (\
 			select decode(TRAN_TIME, ' ', TRAN_END_TIME, TRAN_TIME)                TRAN_TIME,\
-			substr2(decode(TRAN_TIME, ' ', TRAN_END_TIME, TRAN_TIME), 0, 8) tran_date,\
+			SUBSTR(decode(TRAN_TIME, ' ', TRAN_END_TIME, TRAN_TIME), 1, 8) tran_date,\
 			C_ISHOTSEND,\
 			MAT_ACT_WT\
 			from hMMSM01\

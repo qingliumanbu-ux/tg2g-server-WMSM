@@ -73,7 +73,16 @@ int f_wmsmsc_inq1(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn)
 
 		EIClass temp;
 		CString mat_no = bcls_rec->Tables[0].Rows[0]["MAT_NO"].ToString().Replace(",", "','");
-		sqlstr = " SELECT STRAND_NO, case when MAT_NO like '1A%' then SUBSTR2(MAT_NO, 10) else SUBSTR2(MAT_NO, 9) end MAT_NO, decode(MEND_FLAG,'1','X',' ')MEND_FLAG, round(MAT_LEN/1000,3) MAT_LEN, MAT_WT\
+// DM8 适配 CHANGE-106:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " SELECT STRAND_NO, case when MAT_NO like '1A%' then SUBSTR2(MAT_NO, 10) else SUBSTR2(MAT_NO, 9) end MAT_NO, decode(MEND_FLAG,'1','X',' ')MEND_FLAG, round(MAT_LEN/1000,3) MAT_LEN, MAT_WT\
+			// FROM VMMSM01\
+			// WHERE MAT_NO IN('"+ mat_no +"')\
+			// ORDER BY STRAND_NO,MAT_NO ";
+// DM8 SQL：
+		sqlstr = " SELECT STRAND_NO, case when MAT_NO like '1A%' then SUBSTR(MAT_NO, 10) else SUBSTR(MAT_NO, 9) end MAT_NO, decode(MEND_FLAG,'1','X',' ')MEND_FLAG, round(MAT_LEN/1000,3) MAT_LEN, MAT_WT\
 			FROM VMMSM01\
 			WHERE MAT_NO IN('"+ mat_no +"')\
 			ORDER BY STRAND_NO,MAT_NO ";

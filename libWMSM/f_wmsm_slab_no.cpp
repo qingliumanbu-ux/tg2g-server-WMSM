@@ -112,14 +112,27 @@ int f_wmsm_slab_no(CString pono, CDecimal mat_len, CDecimal mat_width, CDecimal 
 				(LISTAGG(DISTINCT(SLAB_NO), '/') WITHIN GROUP(ORDER BY SLAB_NO)) SLAB_NO1\
 				FROM TPSSM03\
 				WHERE LSLAB_NO != SLAB_NO\
+// DM8 适配 CHANGE-368:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+				// and PONO = '"+pono+"'\
+				// and substr2(PONO, 0, 1) != '9'\
+// DM8 SQL：
 				and PONO = '"+pono+"'\
-				and substr2(PONO, 0, 1) != '9'\
+				and SUBSTR(PONO, 1, 1) != '9'\
 				and SLAB_PROD_FLAG = '0'\
 				group by LSLAB_NO ";
 		}
 		else
 		{
-			sqlstr = " select * from tpssm03 where  SLAB_PROD_FLAG='0' AND CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + pono + "') and substr2(PONO, 0, 1) != '9' AND PONO IN (SELECT PONO FROM TPSSM01 WHERE  ST_NO='" + st_no + "') ";
+// DM8 适配 CHANGE-369:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+			// sqlstr = " select * from tpssm03 where  SLAB_PROD_FLAG='0' AND CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + pono + "') and substr2(PONO, 0, 1) != '9' AND PONO IN (SELECT PONO FROM TPSSM01 WHERE  ST_NO='" + st_no + "') ";
+// DM8 SQL：
+			sqlstr = " select * from tpssm03 where  SLAB_PROD_FLAG='0' AND CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + pono + "') and SUBSTR(PONO, 1, 1) != '9' AND PONO IN (SELECT PONO FROM TPSSM01 WHERE  ST_NO='" + st_no + "') ";
 		}
 		cmd_inq.SetCommandText(sqlstr);
 		cmd_inq.ExecuteQuery(temp.Tables[0]);
@@ -172,14 +185,27 @@ int f_wmsm_slab_no(CString pono, CDecimal mat_len, CDecimal mat_width, CDecimal 
 				(LISTAGG(DISTINCT(SLAB_NO), '/') WITHIN GROUP(ORDER BY SLAB_NO)) LSLAB_NO\
 				FROM TPSSM03\
 				WHERE LSLAB_NO != SLAB_NO\
+// DM8 适配 CHANGE-370:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+				// and PONO = '" + pono + "'\
+				// and substr2(PONO, 0, 1) != '9'\
+// DM8 SQL：
 				and PONO = '" + pono + "'\
-				and substr2(PONO, 0, 1) != '9'\
+				and SUBSTR(PONO, 1, 1) != '9'\
 				and SLAB_PROD_FLAG = '0'\
 				group by LSLAB_NO ";
 		}
 		else
 		{
-			sqlstr = " select * from tpssm03 where  SLAB_PROD_FLAG='0' AND CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + pono + "') and substr2(PONO, 0, 1) != '9'  AND PONO IN (SELECT PONO FROM TPSSM01 WHERE  ST_NO='" + st_no + "') ";
+// DM8 适配 CHANGE-371:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+			// sqlstr = " select * from tpssm03 where  SLAB_PROD_FLAG='0' AND CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + pono + "') and substr2(PONO, 0, 1) != '9'  AND PONO IN (SELECT PONO FROM TPSSM01 WHERE  ST_NO='" + st_no + "') ";
+// DM8 SQL：
+			sqlstr = " select * from tpssm03 where  SLAB_PROD_FLAG='0' AND CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + pono + "') and SUBSTR(PONO, 1, 1) != '9'  AND PONO IN (SELECT PONO FROM TPSSM01 WHERE  ST_NO='" + st_no + "') ";
 		}
 		Log::Trace("", __FUNCTION__, "sqlstr【{0}】", sqlstr);
 		cmd_inq.SetCommandText(sqlstr);

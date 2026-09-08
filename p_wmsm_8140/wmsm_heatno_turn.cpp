@@ -128,12 +128,26 @@ int f_wmsm_heatno_turn(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn
 		cmd_inq.Close();
 
 		//质量
-		sqlstr = " UPDATE TQMTS24 SET HEAT_NO = '" + heat_no_new + "' WHERE HEAT_NO = '" + heat_no_old + "' AND SUBSTR2(ST_SAMPLE_NO, 10, 1) IN ('C', 'F', 'R', 'S', 'V') ";//成分主档
+// DM8 适配 CHANGE-374:更新 TQMTS24。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " UPDATE TQMTS24 SET HEAT_NO = '" + heat_no_new + "' WHERE HEAT_NO = '" + heat_no_old + "' AND SUBSTR2(ST_SAMPLE_NO, 10, 1) IN ('C', 'F', 'R', 'S', 'V') ";//成分主档
+		// cmd_inq.SetCommandText(sqlstr);
+// DM8 SQL：
+		sqlstr = " UPDATE TQMTS24 SET HEAT_NO = '" + heat_no_new + "' WHERE HEAT_NO = '" + heat_no_old + "' AND SUBSTR(ST_SAMPLE_NO, 10, 1) IN ('C', 'F', 'R', 'S', 'V') ";//成分主档
 		cmd_inq.SetCommandText(sqlstr);
 		cmd_inq.ExecuteNonQuery();
 		cmd_inq.Close();
 
-		sqlstr = " UPDATE TQMTS25 SET HEAT_NO = '" + heat_no_new + "' WHERE HEAT_NO = '" + heat_no_old + "' AND SUBSTR2(ST_SAMPLE_NO, 10, 1) IN ('C', 'F', 'R', 'S', 'V') ";//成分明细
+// DM8 适配 CHANGE-375:更新 TQMTS25。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " UPDATE TQMTS25 SET HEAT_NO = '" + heat_no_new + "' WHERE HEAT_NO = '" + heat_no_old + "' AND SUBSTR2(ST_SAMPLE_NO, 10, 1) IN ('C', 'F', 'R', 'S', 'V') ";//成分明细
+		// cmd_inq.SetCommandText(sqlstr);
+// DM8 SQL：
+		sqlstr = " UPDATE TQMTS25 SET HEAT_NO = '" + heat_no_new + "' WHERE HEAT_NO = '" + heat_no_old + "' AND SUBSTR(ST_SAMPLE_NO, 10, 1) IN ('C', 'F', 'R', 'S', 'V') ";//成分明细
 		cmd_inq.SetCommandText(sqlstr);
 		cmd_inq.ExecuteNonQuery();
 		cmd_inq.Close();
@@ -144,20 +158,44 @@ int f_wmsm_heatno_turn(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* conn
 		cmd_inq.Close();
 
 		//成品
-		sqlstr = " UPDATE TMMSM33 SET MAT_NO = '" + heat_no_new + "' || SUBSTR2(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR2(BATCH, 9), HEAT_NO = '" + heat_no_new + "',  "
-			" SLAB_NO = '" + heat_no_new + "' || SUBSTR2(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR2(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//切割
+// DM8 适配 CHANGE-376:更新 TMMSM33。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " UPDATE TMMSM33 SET MAT_NO = '" + heat_no_new + "' || SUBSTR2(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR2(BATCH, 9), HEAT_NO = '" + heat_no_new + "',  "
+			// " SLAB_NO = '" + heat_no_new + "' || SUBSTR2(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR2(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//切割
+		// cmd_inq.SetCommandText(sqlstr);
+// DM8 SQL：
+		sqlstr = " UPDATE TMMSM33 SET MAT_NO = '" + heat_no_new + "' || SUBSTR(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR(BATCH, 9), HEAT_NO = '" + heat_no_new + "',  "
+			" SLAB_NO = '" + heat_no_new + "' || SUBSTR(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//切割
 		cmd_inq.SetCommandText(sqlstr);
 		cmd_inq.ExecuteNonQuery();
 		cmd_inq.Close();
 
-		sqlstr = " UPDATE TMMSM01 SET MAT_NO = '" + heat_no_new + "' || SUBSTR2(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR2(BATCH, 9), HEAT_NO = '" + heat_no_new + "',  "
-			" SLAB_NO = '" + heat_no_new + "' || SUBSTR2(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR2(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//材料主档
+// DM8 适配 CHANGE-377:更新 TMMSM01。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr = " UPDATE TMMSM01 SET MAT_NO = '" + heat_no_new + "' || SUBSTR2(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR2(BATCH, 9), HEAT_NO = '" + heat_no_new + "',  "
+			// " SLAB_NO = '" + heat_no_new + "' || SUBSTR2(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR2(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//材料主档
+		// cmd_inq.SetCommandText(sqlstr);
+// DM8 SQL：
+		sqlstr = " UPDATE TMMSM01 SET MAT_NO = '" + heat_no_new + "' || SUBSTR(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR(BATCH, 9), HEAT_NO = '" + heat_no_new + "',  "
+			" SLAB_NO = '" + heat_no_new + "' || SUBSTR(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//材料主档
 		cmd_inq.SetCommandText(sqlstr);
 		cmd_inq.ExecuteNonQuery();
 		cmd_inq.Close();
 
-		sqlstr =  " UPDATE TMMSM96 SET MAT_NO = '" + heat_no_new + "' || SUBSTR2(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR2(BATCH, 9), HEAT_NO = '" + heat_no_new + "', "
-			" SLAB_NO = '" + heat_no_new + "' || SUBSTR2(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR2(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//材料履历
+// DM8 适配 CHANGE-378:更新 TMMSM96。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+		// sqlstr =  " UPDATE TMMSM96 SET MAT_NO = '" + heat_no_new + "' || SUBSTR2(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR2(BATCH, 9), HEAT_NO = '" + heat_no_new + "', "
+			// " SLAB_NO = '" + heat_no_new + "' || SUBSTR2(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR2(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//材料履历
+		// cmd_inq.SetCommandText(sqlstr);
+// DM8 SQL：
+		sqlstr =  " UPDATE TMMSM96 SET MAT_NO = '" + heat_no_new + "' || SUBSTR(MAT_NO, 9), BATCH = '" + heat_no_new + "' || SUBSTR(BATCH, 9), HEAT_NO = '" + heat_no_new + "', "
+			" SLAB_NO = '" + heat_no_new + "' || SUBSTR(SLAB_NO, 9),PRINT_NO = '" + heat_no_new + "' || SUBSTR(PRINT_NO, 9) WHERE HEAT_NO = '" + heat_no_old + "' ";//材料履历
 		cmd_inq.SetCommandText(sqlstr);
 		cmd_inq.ExecuteNonQuery();
 		cmd_inq.Close();

@@ -79,8 +79,15 @@ int f_wmsm01_ponoslab_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* c
 				(LISTAGG(DISTINCT(SLAB_NO), '/') WITHIN GROUP(ORDER BY SLAB_NO)) SLAB_NO1																	   \
 				FROM TPSSM03																																   \
 				WHERE LSLAB_NO != SLAB_NO																													   \
+// DM8 适配 CHANGE-372:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+				// and SLAB_PROD_FLAG = '0'																													   \
+				// and substr2(PONO, 0, 1) != '9'																													\
+// DM8 SQL：
 				and SLAB_PROD_FLAG = '0'																													   \
-				and substr2(PONO, 0, 1) != '9'																													\
+				and SUBSTR(PONO, 1, 1) != '9'																													\
 				and PONO = '" + bcls_rec->Tables[0].Rows[0]["PONO"].ToString() + "'																			   \
 				group by LSLAB_NO																															   \
 				UNION																																		   \
@@ -97,8 +104,24 @@ int f_wmsm01_ponoslab_inq(EIClass* bcls_rec, EIClass* bcls_ret, CDbConnection* c
 				SLAB_NO SLAB_NO1																															   \
 				FROM TPSSM03																																   \
 				WHERE LSLAB_NO = SLAB_NO																													   \
+// DM8 适配 CHANGE-373:查询。SUBSTR2 改为 SUBSTR。
+// 改写原因：SUBSTR2 改为 DM 文档支持的 SUBSTR(按字符截取;BMP 字符下与码点语义一致);位置参数 0 显式改为 1,保持 Oracle 原语义；依据 DM 官方文档,DM8 尚未实测。
+// 本共用分支面向 DM8,其他 DB_KIND 标签也会执行此 SQL;参数、结果列、条件与排序保持不变。
+// 原 SQL（完整保留）：
+				// and SLAB_PROD_FLAG = '0'																													   \
+	            // and substr2(PONO, 0, 1) != '9'																													\
+				 // and PONO in (select pono                                                                                                                      \
+			// from tpssm01                                                                                                                                       \
+		// where TPSSM01.CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + bcls_rec->Tables[0].Rows[0]["PONO"].ToString() + "') and ST_NO = (select ST_NO from tpssm01 where PONO = '" + bcls_rec->Tables[0].Rows[0]["PONO"].ToString() + "')                    \
+			// and PONO_STATUS != '91'))					                                                                                                       \
+			// where 1 = 1)																																	   \
+			// SELECT a.*, b.ORDER_CUST_CNAME,B.TRNP_MODE_CODE																													   \
+			// FROM MM1 a																																		   \
+			// left join tqmom01 b on a.ORDER_NO = b.ORDER_NO																									   \
+			// where 1 = 1 ";
+// DM8 SQL：
 				and SLAB_PROD_FLAG = '0'																													   \
-	            and substr2(PONO, 0, 1) != '9'																													\
+	            and SUBSTR(PONO, 1, 1) != '9'																													\
 				 and PONO in (select pono                                                                                                                      \
 			from tpssm01                                                                                                                                       \
 		where TPSSM01.CAST_LOT_NO = (select CAST_LOT_NO from tpssm01 where PONO = '" + bcls_rec->Tables[0].Rows[0]["PONO"].ToString() + "') and ST_NO = (select ST_NO from tpssm01 where PONO = '" + bcls_rec->Tables[0].Rows[0]["PONO"].ToString() + "')                    \
